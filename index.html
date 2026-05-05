@@ -1,2 +1,210 @@
-<h1>hello</h1>
-<h2>hello</h2>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="image/lg.ico" type="image/x-icon">
+    <link rel="stylesheet" href="st.css">
+    <title>陈同学的秘密花园</title>
+</head>
+<body>
+    <div class="page-shell">
+        <header class="site-hero" id="top">
+            <nav class="site-nav" aria-label="主导航">
+                <a class="brand" href="index.html">陈同学的秘密花园</a>
+                <ul>
+                    <li><a href="homee.html">主页</a></li>
+                    <li><a href="self.html">关于我</a></li>
+                    <li><a href="view.html">诗与远方</a></li>
+                    <li><a href="zzu.html">我与 ZZU</a></li>
+                    <li><a href="love.html">这就是爱</a></li>
+                    <li><a href="memory.html">回忆录</a></li>
+                    <li><a href="board.html">留言树洞</a></li>
+                    <li><a href="last.html">写在最后</a></li>
+                </ul>
+            </nav>
+
+            <div class="hero-content">
+                <p class="eyebrow">Class Website · 2024</p>
+                <h1>欢迎来到陈同学的秘密花园</h1>
+                <p class="hero-copy">
+                    这里收藏着一些故事、照片、音乐和小小的心情。慢慢逛，愿你在某个角落发现一点温柔。
+                </p>
+                <div class="hero-actions">
+                    <a class="button primary" href="homee.html">进入主页</a>
+                    <a class="button ghost" href="board.html">去留言</a>
+                </div>
+            </div>
+        </header>
+
+        <main>
+            <section class="intro-grid" aria-label="网站入口">
+                <article class="feature-card">
+                    <span>01</span>
+                    <h2>诗与远方</h2>
+                    <p>把风景、文字和想象放在一起，留给未来再回头看。</p>
+                    <a href="view.html">打开这一页</a>
+                </article>
+                <article class="feature-card">
+                    <span>02</span>
+                    <h2>校园记忆</h2>
+                    <p>那些具体的人、路、教室和瞬间，都是青春的一部分。</p>
+                    <a href="memory.html">查看回忆</a>
+                </article>
+                <article class="feature-card">
+                    <span>03</span>
+                    <h2>留言树洞</h2>
+                    <p>如果你有想说的话，可以在这里悄悄留下。</p>
+                    <a href="board.html">写点什么</a>
+                </article>
+            </section>
+
+            <section class="music-card">
+                <div>
+                    <p class="section-kicker">Background Music</p>
+                    <h2>给页面加一点旋律</h2>
+                </div>
+                <audio controls loop>
+                    <source src="music/2.mp3" type="audio/mpeg">
+                    您的浏览器不支持音频播放。
+                </audio>
+            </section>
+
+            <section id="blog-section" class="blog-panel">
+                <div class="section-heading">
+                    <p class="section-kicker">Personal Blog</p>
+                    <h2>个人博客</h2>
+                    <p>登录后可以发布新的帖子，也可以看看大家留下的内容。</p>
+                </div>
+
+                <div id="auth-section" class="auth-layout">
+                    <div id="login-form" class="auth-form">
+                        <h3>登录</h3>
+                        <input type="text" id="login-username" placeholder="用户名">
+                        <input type="password" id="login-password" placeholder="密码">
+                        <button onclick="login()">登录</button>
+                    </div>
+                    <div id="register-form" class="auth-form">
+                        <h3>注册</h3>
+                        <input type="text" id="register-username" placeholder="用户名">
+                        <input type="password" id="register-password" placeholder="密码">
+                        <button onclick="register()">注册</button>
+                    </div>
+                    <button class="switch-button" onclick="toggleAuth()">切换到注册</button>
+                </div>
+
+                <div id="blog-content" class="blog-content" style="display: none;">
+                    <div id="create-post" class="editor-card">
+                        <h3>创建新帖子</h3>
+                        <input type="text" id="post-title" placeholder="标题">
+                        <textarea id="post-content" placeholder="内容"></textarea>
+                        <button onclick="createPost()">发布</button>
+                    </div>
+                    <div id="posts-list">
+                        <h3>帖子列表</h3>
+                        <div id="posts"></div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>敬请期待</p>
+            <p>&copy; 2024 Made by Ccl</p>
+        </footer>
+    </div>
+
+    <aside class="side-photo" aria-label="装饰图片">
+        <img src="image/ban.jpg" alt="班级网站装饰图">
+    </aside>
+
+    <a class="floating-return" href="#top" aria-label="回到顶部">
+        <img src="image/su7.jpg" alt="回到顶部">
+        <span>TOP</span>
+    </a>
+
+    <script>
+        let token = localStorage.getItem('token');
+        let isLogin = true;
+
+        function toggleAuth() {
+            isLogin = !isLogin;
+            document.getElementById('login-form').style.display = isLogin ? 'block' : 'none';
+            document.getElementById('register-form').style.display = isLogin ? 'none' : 'block';
+            document.querySelector('button[onclick="toggleAuth()"]').textContent = isLogin ? '切换到注册' : '切换到登录';
+        }
+
+        async function register() {
+            const username = document.getElementById('register-username').value;
+            const password = document.getElementById('register-password').value;
+            const res = await fetch('/api/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            const data = await res.json();
+            alert(data.message);
+        }
+
+        async function login() {
+            const username = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+            const res = await fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            const data = await res.json();
+            if (data.token) {
+                token = data.token;
+                localStorage.setItem('token', token);
+                document.getElementById('auth-section').style.display = 'none';
+                document.getElementById('blog-content').style.display = 'block';
+                loadPosts();
+            } else {
+                alert(data.message);
+            }
+        }
+
+        async function createPost() {
+            const title = document.getElementById('post-title').value;
+            const content = document.getElementById('post-content').value;
+            const res = await fetch('/api/posts', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ title, content })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                loadPosts();
+                document.getElementById('post-title').value = '';
+                document.getElementById('post-content').value = '';
+            } else {
+                alert(data.message);
+            }
+        }
+
+        async function loadPosts() {
+            const res = await fetch('/api/posts');
+            const posts = await res.json();
+            const postsDiv = document.getElementById('posts');
+            postsDiv.innerHTML = posts.map(post => `
+                <article class="post">
+                    <h4>${post.title}</h4>
+                    <p>${post.content}</p>
+                    <small>作者：${post.author} | ${new Date(post.createdAt).toLocaleString()}</small>
+                </article>
+            `).join('');
+        }
+
+        if (token) {
+            document.getElementById('auth-section').style.display = 'none';
+            document.getElementById('blog-content').style.display = 'block';
+            loadPosts();
+        }
+    </script>
+</body>
+</html>
