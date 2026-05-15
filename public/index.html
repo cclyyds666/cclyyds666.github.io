@@ -80,17 +80,17 @@
                 <div id="auth-section" class="auth-layout">
                     <div id="login-form" class="auth-form">
                         <h3>登录</h3>
-                        <input type="text" id="login-username" placeholder="用户名">
-                        <input type="password" id="login-password" placeholder="密码">
-                        <button onclick="login()">登录</button>
+                        <input type="text" id="login-username" placeholder="用户名" autocomplete="username">
+                        <input type="password" id="login-password" placeholder="密码" autocomplete="current-password">
+                        <button type="button" onclick="login()">登录</button>
                     </div>
                     <div id="register-form" class="auth-form">
                         <h3>注册</h3>
-                        <input type="text" id="register-username" placeholder="用户名">
-                        <input type="password" id="register-password" placeholder="密码">
-                        <button onclick="register()">注册</button>
+                        <input type="text" id="register-username" placeholder="用户名" autocomplete="username">
+                        <input type="password" id="register-password" placeholder="密码" autocomplete="new-password">
+                        <button type="button" onclick="register()">注册</button>
                     </div>
-                    <button class="switch-button" onclick="toggleAuth()">切换到注册</button>
+                    <button class="switch-button" type="button" onclick="toggleAuth()">切换到注册</button>
                 </div>
 
                 <div id="blog-content" class="blog-content" style="display: none;">
@@ -98,7 +98,7 @@
                         <h3>创建新帖子</h3>
                         <input type="text" id="post-title" placeholder="标题">
                         <textarea id="post-content" placeholder="内容"></textarea>
-                        <button onclick="createPost()">发布</button>
+                        <button type="button" onclick="createPost()">发布</button>
                     </div>
                     <div id="posts-list">
                         <h3>帖子列表</h3>
@@ -134,6 +134,15 @@
             document.querySelector('button[onclick="toggleAuth()"]').textContent = isLogin ? '切换到注册' : '切换到登录';
         }
 
+        function setBlogVisible(visible) {
+            document.getElementById('auth-section').style.display = visible ? 'none' : 'grid';
+            document.getElementById('blog-content').style.display = visible ? 'grid' : 'none';
+        }
+
+        function renderMessage(message) {
+            alert(message || '操作完成');
+        }
+
         async function register() {
             const username = document.getElementById('register-username').value;
             const password = document.getElementById('register-password').value;
@@ -143,7 +152,8 @@
                 body: JSON.stringify({ username, password })
             });
             const data = await res.json();
-            alert(data.message);
+            renderMessage(data.message);
+            if (res.ok) toggleAuth();
         }
 
         async function login() {
@@ -158,11 +168,10 @@
             if (data.token) {
                 token = data.token;
                 localStorage.setItem('token', token);
-                document.getElementById('auth-section').style.display = 'none';
-                document.getElementById('blog-content').style.display = 'block';
+                setBlogVisible(true);
                 loadPosts();
             } else {
-                alert(data.message);
+                renderMessage(data.message);
             }
         }
 
@@ -183,26 +192,34 @@
                 document.getElementById('post-title').value = '';
                 document.getElementById('post-content').value = '';
             } else {
-                alert(data.message);
+                renderMessage(data.message);
             }
+        }
+
+        function createPostElement(post) {
+            const article = document.createElement('article');
+            const title = document.createElement('h4');
+            const content = document.createElement('p');
+            const meta = document.createElement('small');
+
+            article.className = 'post';
+            title.textContent = post.title;
+            content.textContent = post.content;
+            meta.textContent = `作者：${post.author} | ${new Date(post.createdAt).toLocaleString()}`;
+
+            article.append(title, content, meta);
+            return article;
         }
 
         async function loadPosts() {
             const res = await fetch('/api/posts');
             const posts = await res.json();
             const postsDiv = document.getElementById('posts');
-            postsDiv.innerHTML = posts.map(post => `
-                <article class="post">
-                    <h4>${post.title}</h4>
-                    <p>${post.content}</p>
-                    <small>作者：${post.author} | ${new Date(post.createdAt).toLocaleString()}</small>
-                </article>
-            `).join('');
+            postsDiv.replaceChildren(...posts.map(createPostElement));
         }
 
         if (token) {
-            document.getElementById('auth-section').style.display = 'none';
-            document.getElementById('blog-content').style.display = 'block';
+            setBlogVisible(true);
             loadPosts();
         }
     </script>
