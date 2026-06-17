@@ -85,7 +85,11 @@
             const res = await fetch(apiUrl(path), { headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options });
             const text = await res.text();
             const data = text ? JSON.parse(text) : {};
-            if (!res.ok) throw new Error(data.message || '请求失败');
+            if (!res.ok) {
+                const error = new Error(data.message || '请求失败');
+                error.status = res.status;
+                throw error;
+            }
             return data;
         }
         async function register() {
@@ -110,8 +114,20 @@
                 const title = document.getElementById('post-title').value;
                 const content = document.getElementById('post-content').value;
                 await requestJson('/api/posts', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ title, content }) });
-                document.getElementById('post-title').value = ''; document.getElementById('post-content').value = ''; setStatus('发布成功。'); loadPosts();
-            } catch (error) { setStatus(error.message); }
+                document.getElementById('post-title').value = '';
+                document.getElementById('post-content').value = '';
+                setStatus('发布成功。');
+                loadPosts();
+            } catch (error) {
+                if (error.status === 401) {
+                    logout();
+                    setStatus('登录状态已失效，请重新登录后再发布。');
+                    alert('登录状态已失效，请重新登录后再发布。');
+                    return;
+                }
+                setStatus(error.message);
+                alert(error.message);
+            }
         }
         function createPostElement(post) {
             const article = document.createElement('article'); const title = document.createElement('h4'); const content = document.createElement('p'); const meta = document.createElement('small');
