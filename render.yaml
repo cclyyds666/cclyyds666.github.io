@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: cclyyds666-personal-site
+    name: cclyyds
     runtime: node
     plan: free
     buildCommand: npm ci
