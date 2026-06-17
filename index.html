@@ -82,7 +82,9 @@
             document.getElementById('blog-content').style.display = visible ? 'grid' : 'none';
         }
         async function requestJson(path, options = {}) {
-            const res = await fetch(apiUrl(path), { headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options });
+            const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+            const { headers: _headers, ...rest } = options;
+            const res = await fetch(apiUrl(path), { ...rest, headers });
             const text = await res.text();
             const data = text ? JSON.parse(text) : {};
             if (!res.ok) {
