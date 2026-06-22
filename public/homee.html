@@ -1,19 +1,270 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><link rel="icon" href="image/lg.ico" type="image/x-icon"><link rel="stylesheet" href="st.css"><title>主页 - 陈同学的秘密花园</title></head>
-<body><div class="page-shell"><header class="content-hero" id="top"><nav class="site-nav" aria-label="主导航">
-    <a class="brand" href="index.html">陈同学的秘密花园</a>
-    <ul>
-        <li><a href="homee.html">主页</a></li>
-        <li><a href="self.html">关于我</a></li>
-        <li><a href="view.html">诗与远方</a></li>
-        <li><a href="zzu.html">我与 ZZU</a></li>
-        <li><a href="love.html">这就是爱</a></li>
-        <li><a href="memory.html">回忆录</a></li>
-        <li><a href="board.html">留言树洞</a></li>
-        <li><a href="last.html">写在最后</a></li>
-    </ul>
-</nav><div><p class="eyebrow">Home</p><h1>主页</h1><p>把站点的内容整理成几个入口：关于我、校园、风景、回忆和留言。</p><div class="hero-actions"><a class="button primary" href="index.html">回到首页</a><a class="button ghost" href="board.html">去留言</a></div></div></header><main><section class="card-grid"><article class="story-card"><span>01</span><h2>快速入口</h2><p>从这里可以跳转到每个主题页面。</p></article><article class="story-card"><span>02</span><h2>最近更新</h2><p>主页会保持轻量，适合 GitHub Pages 静态托管。</p></article><article class="story-card"><span>03</span><h2>动态内容</h2><p>博客和留言由 Render API 提供，静态页会优雅降级。</p></article></section></main><footer>
-    <p>愿这里一直保存热爱、真诚和慢慢变好的自己。</p>
-    <p>&copy; 2026 Made by Ccl</p>
-</footer></div><a class="floating-return" href="#top" aria-label="回到顶部"><img src="image/su7.jpg" alt="回到顶部"><span>TOP</span></a></body></html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="image/lg.ico" type="image/x-icon">
+    <link rel="stylesheet" href="st.css">
+    <title>主页 - 陈同学的秘密花园</title>
+</head>
+<body>
+    <div class="page-shell">
+        <header class="content-hero" id="top">
+            <nav class="site-nav" aria-label="主导航">
+                <a class="brand" href="index.html">陈同学的秘密花园</a>
+                <ul>
+                    <li><a href="homee.html">主页</a></li>
+                    <li><a href="self.html">关于我</a></li>
+                    <li><a href="view.html">诗与远方</a></li>
+                    <li><a href="zzu.html">我与 ZZU</a></li>
+                    <li><a href="love.html">这就是爱</a></li>
+                    <li><a href="memory.html">回忆录</a></li>
+                    <li><a href="board.html">留言树洞</a></li>
+                    <li><a href="last.html">写在最后</a></li>
+                </ul>
+            </nav>
+            <div>
+                <p class="eyebrow">Home</p>
+                <h1>主页</h1>
+                <p>把站点的内容整理成几个入口：关于我、校园、风景、回忆和留言。</p>
+                <div class="hero-actions">
+                    <a class="button primary" href="index.html">回到首页</a>
+                    <a class="button ghost" href="board.html">去留言</a>
+                </div>
+            </div>
+        </header>
+        <main>
+            <!-- UserBar: 登录状态栏 -->
+            <div class="user-bar" id="userBar">
+                <div class="user-bar-left" id="userBarLeft">
+                    <span id="userBarGuest">欢迎访问</span>
+                </div>
+                <div class="user-bar-right" id="userBarRight">
+                    <button class="btn-ghost-sm" id="authBtn" onclick="openAuthModal()">登录 / 注册</button>
+                </div>
+            </div>
+
+            <!-- PostList: 帖子列表 -->
+            <section class="panel" id="postSection">
+                <div class="section-heading">
+                    <p class="section-kicker">Blog</p>
+                    <h2>帖子列表</h2>
+                    <p id="postStatus" class="status-text">正在加载帖子……</p>
+                </div>
+                <div id="posts"></div>
+            </section>
+        </main>
+        <footer>
+            <p>愿这里一直保存热爱、真诚和慢慢变好的自己。</p>
+            <p>&copy; 2026 Made by Ccl</p>
+        </footer>
+    </div>
+
+    <!-- AuthModal: 登录 / 注册 -->
+    <div class="modal-overlay hidden" id="authModal">
+        <div class="modal-content">
+            <button class="close-modal" onclick="closeAuthModal()">✕</button>
+            <h2 id="authTitle">登录</h2>
+            <div class="auth-tabs">
+                <button class="auth-tab active" id="loginTab" onclick="switchAuthTab('login')">登录</button>
+                <button class="auth-tab" id="registerTab" onclick="switchAuthTab('register')">注册</button>
+            </div>
+            <div id="loginForm">
+                <input type="text" id="loginUsername" placeholder="用户名" autocomplete="username">
+                <input type="password" id="loginPassword" placeholder="密码" autocomplete="current-password">
+                <button type="button" onclick="handleLogin()">登录</button>
+                <p id="authError" class="status-text" style="margin-top:10px;color:var(--rose);"></p>
+            </div>
+            <div id="registerForm" style="display:none;">
+                <input type="text" id="registerUsername" placeholder="用户名" autocomplete="username">
+                <input type="password" id="registerPassword" placeholder="密码" autocomplete="new-password">
+                <button type="button" onclick="handleRegister()">注册</button>
+                <p id="registerError" class="status-text" style="margin-top:10px;color:var(--rose);"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- EditorModal: 发帖编辑器 -->
+    <div class="modal-overlay hidden" id="editorModal">
+        <div class="modal-content">
+            <button class="close-modal" onclick="closeEditorModal()">✕</button>
+            <h2>发布新帖子</h2>
+            <input type="text" id="postTitle" placeholder="标题">
+            <textarea id="postContent" placeholder="内容" style="min-height:180px;"></textarea>
+            <button type="button" onclick="handleCreatePost()">发布</button>
+            <p id="editorError" class="status-text" style="margin-top:10px;color:var(--rose);"></p>
+        </div>
+    </div>
+
+    <aside class="side-photo" aria-label="装饰图片"><img src="image/ban.jpg" alt="班级网站装饰图"></aside>
+    <a class="floating-return" href="#top" aria-label="回到顶部"><img src="image/su7.jpg" alt="回到顶部"><span>TOP</span></a>
+
+    <script>
+        const API_BASE_URL = window.SITE_API_BASE_URL || 'https://cclyyds666-personal-site-h8kk.onrender.com';
+        let currentToken = localStorage.getItem('token');
+        let currentUser = null;
+
+        function apiUrl(path) { return `${API_BASE_URL}${path}`; }
+
+        async function requestJson(path, options = {}) {
+            const res = await fetch(apiUrl(path), { headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options });
+            const text = await res.text();
+            const data = text ? JSON.parse(text) : {};
+            if (!res.ok) throw new Error(data.message || '请求失败');
+            return data;
+        }
+
+        // ===== User Bar =====
+        function updateUserBar() {
+            const left = document.getElementById('userBarLeft');
+            const right = document.getElementById('userBarRight');
+            if (currentToken && currentUser) {
+                const avatarHtml = currentUser.avatarUrl
+                    ? `<img class="user-avatar" src="${currentUser.avatarUrl}" alt="头像">`
+                    : `<span class="user-avatar-placeholder">${(currentUser.nickname || currentUser.username || '?')[0].toUpperCase()}</span>`;
+                left.innerHTML = avatarHtml + '<div class="user-info"><span class="user-name">' + (currentUser.nickname || currentUser.username) + '</span><span class="user-nickname">@' + currentUser.username + '</span></div>';
+                right.innerHTML = '<button class="btn-ghost-sm" onclick="openEditorModal()">发帖</button><button class="btn-ghost-sm" onclick="handleLogout()">退出</button>';
+            } else {
+                left.innerHTML = '<span>欢迎访问</span>';
+                right.innerHTML = '<button class="btn-ghost-sm" id="authBtn" onclick="openAuthModal()">登录 / 注册</button>';
+            }
+        }
+
+        // ===== Auth Modal =====
+        function openAuthModal() { document.getElementById('authModal').classList.remove('hidden'); }
+        function closeAuthModal() { document.getElementById('authModal').classList.add('hidden'); clearAuthErrors(); }
+        function clearAuthErrors() {
+            document.getElementById('authError').textContent = '';
+            document.getElementById('registerError').textContent = '';
+        }
+
+        function switchAuthTab(tab) {
+            const loginTab = document.getElementById('loginTab');
+            const registerTab = document.getElementById('registerTab');
+            const loginForm = document.getElementById('loginForm');
+            const registerForm = document.getElementById('registerForm');
+            const title = document.getElementById('authTitle');
+            if (tab === 'login') {
+                loginTab.classList.add('active'); registerTab.classList.remove('active');
+                loginForm.style.display = ''; registerForm.style.display = 'none';
+                title.textContent = '登录';
+            } else {
+                registerTab.classList.add('active'); loginTab.classList.remove('active');
+                registerForm.style.display = ''; loginForm.style.display = 'none';
+                title.textContent = '注册';
+            }
+            clearAuthErrors();
+        }
+
+        async function handleLogin() {
+            const username = document.getElementById('loginUsername').value.trim();
+            const password = document.getElementById('loginPassword').value;
+            const errorEl = document.getElementById('authError');
+            if (!username || !password) { errorEl.textContent = '请填写用户名和密码'; return; }
+            try {
+                const data = await requestJson('/api/login', { method: 'POST', body: JSON.stringify({ username, password }) });
+                currentToken = data.token;
+                localStorage.setItem('token', currentToken);
+                await fetchCurrentUser();
+                closeAuthModal();
+                updateUserBar();
+                loadPosts();
+            } catch (err) { errorEl.textContent = err.message; }
+        }
+
+        async function handleRegister() {
+            const username = document.getElementById('registerUsername').value.trim();
+            const password = document.getElementById('registerPassword').value;
+            const errorEl = document.getElementById('registerError');
+            if (!username || !password) { errorEl.textContent = '请填写用户名和密码'; return; }
+            try {
+                await requestJson('/api/register', { method: 'POST', body: JSON.stringify({ username, password }) });
+                switchAuthTab('login');
+                document.getElementById('loginUsername').value = username;
+                document.getElementById('authError').textContent = '注册成功，请登录。';
+            } catch (err) { errorEl.textContent = err.message; }
+        }
+
+        async function handleLogout() {
+            currentToken = null;
+            currentUser = null;
+            localStorage.removeItem('token');
+            updateUserBar();
+            loadPosts();
+        }
+
+        // ===== Fetch Current User =====
+        async function fetchCurrentUser() {
+            if (!currentToken) { currentUser = null; return; }
+            try {
+                const data = await requestJson('/api/user/profile', { headers: { Authorization: `Bearer ${currentToken}` } });
+                currentUser = data;
+            } catch { currentUser = null; currentToken = null; localStorage.removeItem('token'); }
+        }
+
+        // ===== Editor Modal =====
+        function openEditorModal() { document.getElementById('editorModal').classList.remove('hidden'); }
+        function closeEditorModal() { document.getElementById('editorModal').classList.add('hidden'); document.getElementById('editorError').textContent = ''; }
+
+        async function handleCreatePost() {
+            const title = document.getElementById('postTitle').value.trim();
+            const content = document.getElementById('postContent').value.trim();
+            const errorEl = document.getElementById('editorError');
+            if (!title || !content) { errorEl.textContent = '标题和内容不能为空'; return; }
+            try {
+                await requestJson('/api/posts', { method: 'POST', headers: { Authorization: `Bearer ${currentToken}` }, body: JSON.stringify({ title, content }) });
+                document.getElementById('postTitle').value = '';
+                document.getElementById('postContent').value = '';
+                closeEditorModal();
+                loadPosts();
+            } catch (err) { errorEl.textContent = err.message; }
+        }
+
+        // ===== Posts =====
+        function createPostElement(post) {
+            const article = document.createElement('article');
+            article.className = 'post';
+            const title = document.createElement('h4');
+            title.textContent = post.title;
+            const content = document.createElement('p');
+            content.textContent = post.content;
+            const meta = document.createElement('small');
+            meta.textContent = `作者：${post.author} | ${new Date(post.createdAt).toLocaleString()}`;
+            article.append(title, content, meta);
+            return article;
+        }
+
+        async function loadPosts() {
+            const postsDiv = document.getElementById('posts');
+            const statusEl = document.getElementById('postStatus');
+            statusEl.textContent = '正在加载帖子……';
+            try {
+                const data = await requestJson('/api/posts?limit=20');
+                const posts = Array.isArray(data) ? data : data.items;
+                postsDiv.replaceChildren(...posts.map(createPostElement));
+                statusEl.textContent = posts.length ? '共 ' + posts.length + ' 篇帖子' : '还没有帖子，登录后发布第一篇吧。';
+            } catch (error) {
+                postsDiv.innerHTML = '<article class="post"><h4>动态服务暂未连接</h4><p>请配置 Render API 地址后再使用博客发布功能。</p><small>静态内容仍可正常浏览。</small></article>';
+                statusEl.textContent = '暂未连接到动态服务。';
+            }
+        }
+
+        // ===== Init =====
+        (async function init() {
+            if (currentToken) {
+                await fetchCurrentUser();
+            }
+            updateUserBar();
+            loadPosts();
+
+            // 点击遮罩关闭 Modal
+            document.getElementById('authModal').addEventListener('click', function(e) {
+                if (e.target === this) closeAuthModal();
+            });
+            document.getElementById('editorModal').addEventListener('click', function(e) {
+                if (e.target === this) closeEditorModal();
+            });
+        })();
+    </script>
+</body>
+</html>

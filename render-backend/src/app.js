@@ -18,6 +18,8 @@ function publicUser(row) {
   return {
     id: row.id,
     username: row.username,
+    nickname: row.nickname || null,
+    avatarUrl: row.avatar_url || null,
     createdAt: row.created_at
   };
 }
@@ -139,6 +141,68 @@ export function createApp(options = {}) {
       token: createToken(user),
       user: publicUser(user)
     });
+  });
+
+  // ----- 获取当前用户个人资料（需认证） -----
+  app.get('/api/user/profile', authRequired, async (req, res) => {
+    const { rows } = await pool.query(
+      'SELECT id, username, nickname, avatar_url, created_at FROM users WHERE id = $1',
+      [req.user.id]
+    );
+    if (rows.length === 0) return res.status(404).json({ message: '用户不存在。' });
+    return res.json(publicUser(rows[0]));
+  });
+
+  // ----- 修改当前用户个人资料（需认证） -----
+  app.patch('/api/user/profile', authRequired, async (req, res) => {
+    const nickname = req.body?.nickname !== undefined ? cleanText(req.body.nickname) : undefined;
+    const avatarUrl = req.body?.avatarUrl !== undefined ? cleanText(req.body.avatarUrl) : undefined;
+
+    if (nickname !== undefined && (typeof nickname !== 'string' || nickname.length < 1 || nickname.length > 24)) {
+      return res.status(400).json({ message: '昵称长度需要在 1 到 24 个字符之间。' });
+    }
+    if (avatarUrl !== undefined && (typeof avatarUrl !== 'string' || avatarUrl.length > 512)) {
+      return res.status(400).json({ message: '头像 URL 长度不能超过 512 个字符。' });
+    }
+
+    const setClauses = [];
+    const params = [];
+    let idx = 1;
+
+    if (nickname !== undefined) {
+      setClauses.push(`nickname = $${idx++}`);
+      params.push(nickname || null);
+    }
+    if (avatarUrl !== undefined) {
+      setClauses.push(`avatar_url = $${idx++}`);
+      params.push(avatarUrl || null);
+    }
+
+    if (setClauses.length === 0) {
+      return res.status(400).json({ message: '没有需要修改的字段。' });
+    }
+
+    params.push(req.user.id);
+    const { rows } = await pool.query(
+      `UPDATE users SET ${setClauses.join(', ')} WHERE id = $${idx}
+       RETURNING id, username, nickname, avatar_url, created_at`,
+      params
+    );
+
+    return res.json(publicUser(rows[0]));
+  });
+
+  // ----- 查看公开用户个人资料（公开） -----
+  app.get('/api/users/:id/profile', async (req, res) => {
+    const userId = Number(req.params.id);
+    if (!Number.isFinite(userId)) return res.status(400).json({ message: '无效的用户 ID。' });
+
+    const { rows } = await pool.query(
+      'SELECT id, username, nickname, avatar_url, created_at FROM users WHERE id = $1',
+      [userId]
+    );
+    if (rows.length === 0) return res.status(404).json({ message: '用户不存在。' });
+    return res.json(publicUser(rows[0]));
   });
 
   // ----- 获取帖子列表 -----

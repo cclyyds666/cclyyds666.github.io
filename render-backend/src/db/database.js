@@ -80,6 +80,20 @@ export function createDatabase(connectionString) {
         $$;
       `);
 
+      // nickname / avatar_url 列迁移（DO 块保护，避免重复列错误）
+      await client.query(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'nickname') THEN
+            ALTER TABLE users ADD COLUMN nickname TEXT;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'avatar_url') THEN
+            ALTER TABLE users ADD COLUMN avatar_url TEXT;
+          END IF;
+        END;
+        $$;
+      `);
+
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
