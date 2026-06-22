@@ -1,51 +1,100 @@
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import pg from 'pg';
 
-export function createDatabase(dbPath = process.env.DATABASE_PATH || 'data/site.sqlite') {
-  if (dbPath !== ':memory:') {
-    mkdirSync(dirname(dbPath), { recursive: true });
+const { Pool } = pg;
+
+/**
+ * 创建 Neon (PostgreSQL) 连接池并执行表结构迁移。
+ * @param {string} [connectionString=process.env.DATABASE_URL]
+ * @returns {{ pool: pg.Pool, migrate: () => Promise<void>, close: () => Promise<void> }}
+ */
+export function createDatabase(connectionString) {
+  const url = connectionString || process.env.DATABASE_URL;
+
+  if (!url) {
+    throw new Error(
+      'DATABASE_URL 环境变量未设置。请设置 DATABASE_URL 指向 Neon PostgreSQL 数据库。'
+    );
   }
 
-  const db = new DatabaseSync(dbPath);
-  db.exec('PRAGMA foreign_keys = ON;');
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      password_salt TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
+  const pool = new Pool({
+    connectionString: url,
+    max: 10,
+    connectionTimeoutMillis: 10_000,
+    idleTimeoutMillis: 30_000,
+  });
 
-    CREATE TABLE IF NOT EXISTS posts (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      title TEXT NOT NULL,
-      content TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-    );
+  /**
+   * 执行表结构迁移（建表 + 索引）。
+   * 使用 IF NOT EXISTS，多次调用安全。
+   */
+  async function migrate() {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    CREATE TABLE IF NOT EXISTS messages (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      content TEXT NOT NULL,
-      approved INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS users (
+          id SERIAL PRIMARY KEY,
+          username TEXT NOT NULL UNIQUE,
+          password_hash TEXT NOT NULL,
+          password_salt TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+      `);
 
-    CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at DESC, id DESC);
-    CREATE INDEX IF NOT EXISTS idx_posts_user_id ON posts(user_id);
-    CREATE INDEX IF NOT EXISTS idx_messages_approved_created_at ON messages(approved, created_at DESC, id DESC);
-  `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS posts (
+          id SERIAL PRIMARY KEY,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          title TEXT NOT NULL,
+          content TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+      `);
 
-  try {
-    db.exec('ALTER TABLE posts ADD COLUMN updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP;');
-  } catch (error) {
-    if (!String(error.message).includes('duplicate column')) throw error;
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS messages (
+          id SERIAL PRIMARY KEY,
+          name TEXT NOT NULL,
+          content TEXT NOT NULL,
+          approved INTEGER NOT NULL DEFAULT 1,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // 索引（IF NOT EXISTS 对索引无效，用 DO 块保护）
+      await client.query(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_posts_created_at') THEN
+            CREATE INDEX idx_posts_created_at ON posts(created_at DESC, id DESC);
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_posts_user_id') THEN
+            CREATE INDEX idx_posts_user_id ON posts(user_id);
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_messages_approved_created_at') THEN
+            CREATE INDEX idx_messages_approved_created_at ON messages(approved, created_at DESC, id DESC);
+          END IF;
+        END;
+        $$;
+      `);
+
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
-  return db;
+  /**
+   * 关闭连接池（应用退出时调用）。
+   */
+  async function close() {
+    await pool.end();
+  }
+
+  return { pool, migrate, close };
 }

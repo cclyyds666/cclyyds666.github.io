@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: cclyyds666
+    name: cclyyds666-personal-site
     runtime: node
     plan: free
     buildCommand: npm ci
@@ -10,8 +10,8 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 24.15.0
-      - key: DATABASE_PATH
-        value: data/site.sqlite
+      - key: DATABASE_URL
+        sync: false
       - key: JWT_SECRET
         generateValue: true
       - key: ALLOWED_ORIGINS
