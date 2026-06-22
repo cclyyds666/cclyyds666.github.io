@@ -96,6 +96,19 @@
         </div>
     </div>
 
+    <!-- ProfileModal: 修改个人资料 -->
+    <div class="modal-overlay hidden" id="profileModal">
+        <div class="modal-content">
+            <button class="close-modal" onclick="closeProfileModal()">✕</button>
+            <h2>修改个人资料</h2>
+            <input type="text" id="profileNickname" placeholder="昵称（1-24 个字符）">
+            <input type="text" id="profileAvatar" placeholder="Gravatar 头像 URL（可选）">
+            <button type="button" onclick="handleUpdateProfile()">保存</button>
+            <p id="profileError" class="status-text" style="margin-top:10px;color:var(--rose);"></p>
+            <p class="status-text" style="margin-top:8px;">头像使用 <a href="https://gravatar.com" target="_blank" style="color:var(--teal);text-decoration:underline;">Gravatar</a>，填入你的 Gravatar 邮箱对应的头像 URL 即可。</p>
+        </div>
+    </div>
+
     <aside class="side-photo" aria-label="装饰图片"><img src="image/ban.jpg" alt="班级网站装饰图"></aside>
     <a class="floating-return" href="#top" aria-label="回到顶部"><img src="image/su7.jpg" alt="回到顶部"><span>TOP</span></a>
 
@@ -123,7 +136,7 @@
                     ? `<img class="user-avatar" src="${currentUser.avatarUrl}" alt="头像">`
                     : `<span class="user-avatar-placeholder">${(currentUser.nickname || currentUser.username || '?')[0].toUpperCase()}</span>`;
                 left.innerHTML = avatarHtml + '<div class="user-info"><span class="user-name">' + (currentUser.nickname || currentUser.username) + '</span><span class="user-nickname">@' + currentUser.username + '</span></div>';
-                right.innerHTML = '<button class="btn-ghost-sm" onclick="openEditorModal()">发帖</button><button class="btn-ghost-sm" onclick="handleLogout()">退出</button>';
+                right.innerHTML = '<button class="btn-ghost-sm" onclick="openEditorModal()">发帖</button><button class="btn-ghost-sm" onclick="openProfileModal()">修改资料</button><button class="btn-ghost-sm" onclick="handleLogout()">退出</button>';
             } else {
                 left.innerHTML = '<span>欢迎访问</span>';
                 right.innerHTML = '<button class="btn-ghost-sm" id="authBtn" onclick="openAuthModal()">登录 / 注册</button>';
@@ -200,6 +213,35 @@
                 const data = await requestJson('/api/user/profile', { headers: { Authorization: `Bearer ${currentToken}` } });
                 currentUser = data;
             } catch { currentUser = null; currentToken = null; localStorage.removeItem('token'); }
+        }
+
+        // ===== Profile Modal =====
+        function openProfileModal() {
+            document.getElementById('profileNickname').value = currentUser.nickname || '';
+            document.getElementById('profileAvatar').value = currentUser.avatarUrl || '';
+            document.getElementById('profileError').textContent = '';
+            document.getElementById('profileModal').classList.remove('hidden');
+        }
+        function closeProfileModal() { document.getElementById('profileModal').classList.add('hidden'); }
+
+        async function handleUpdateProfile() {
+            const nickname = document.getElementById('profileNickname').value.trim();
+            const avatarUrl = document.getElementById('profileAvatar').value.trim();
+            const errorEl = document.getElementById('profileError');
+            const body = {};
+            if (nickname) body.nickname = nickname;
+            if (avatarUrl) body.avatarUrl = avatarUrl;
+            if (!nickname && !avatarUrl) { errorEl.textContent = '请填写至少一个字段。'; return; }
+            try {
+                const data = await requestJson('/api/user/profile', {
+                    method: 'PATCH',
+                    headers: { Authorization: `Bearer ${currentToken}` },
+                    body: JSON.stringify(body)
+                });
+                currentUser = data;
+                updateUserBar();
+                closeProfileModal();
+            } catch (err) { errorEl.textContent = err.message; }
         }
 
         // ===== Editor Modal =====

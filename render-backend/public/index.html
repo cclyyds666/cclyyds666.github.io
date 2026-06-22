@@ -40,22 +40,10 @@
                 <article class="feature-card"><span>03</span><h2>留言树洞</h2><p>如果你有想说的话，可以在这里悄悄留下。</p><a href="board.html">写点什么</a></article>
             </section>
             <section class="music-card">
-                <div><p class="section-kicker">Background Music</p><h2>给页面加一点旋律</h2><p class="status-text">暂时没有上传音乐文件，所以这里先保留一张安静的唱片卡片，避免页面出现失效播放器。</p></div>
-                <div class="music-placeholder">音乐文件准备好后，放到 <strong>music/2.mp3</strong> 即可恢复播放器。</div>
-            </section>
-            <section id="blog-section" class="blog-panel">
-                <div class="section-heading"><p class="section-kicker">Personal Blog</p><h2>个人博客</h2><p>博客内容由 Render 后端提供；静态页面会自动尝试连接 API，未配置时也不会影响浏览。</p></div>
-                <p id="blog-status" class="status-text">正在连接动态服务……</p>
-                <div id="auth-section" class="auth-layout">
-                    <div id="login-form" class="auth-form"><h3>登录发布</h3><input type="text" id="login-username" placeholder="用户名" autocomplete="username"><input type="password" id="login-password" placeholder="密码" autocomplete="current-password"><button type="button" onclick="login()">登录</button></div>
-                    <div id="register-form" class="auth-form"><h3>注册账号</h3><input type="text" id="register-username" placeholder="用户名" autocomplete="username"><input type="password" id="register-password" placeholder="密码" autocomplete="new-password"><button type="button" onclick="register()">注册</button></div>
-                    <button class="switch-button" type="button" onclick="toggleAuth()">切换到注册</button>
+                <div><p class="section-kicker">Background Music</p><h2>给页面加一点旋律</h2><p class="status-text">打开网易云音乐外链播放器，浏览时也能听到喜欢的歌。</p><p class="status-text" style="margin-top:6px;">如需更换歌单，点击右侧播放器中的"打开"按钮跳转网易云。</p></div>
+                <div class="music-embed">
+                    <iframe frameborder="0" src="https://music.163.com/outchain/player?type=0&id=&auto=0&height=90" style="width:100%;height:90px;border-radius:12px;" allow="autoplay"></iframe>
                 </div>
-                <div id="blog-content" class="blog-content" style="display: none;">
-                    <div class="action-row"><button class="logout-button" type="button" onclick="logout()">退出登录</button></div>
-                    <div id="create-post" class="editor-card"><h3>创建新帖子</h3><input type="text" id="post-title" placeholder="标题"><textarea id="post-content" placeholder="内容"></textarea><button type="button" onclick="createPost()">发布</button></div>
-                </div>
-                <div id="posts-list"><h3>帖子列表</h3><div id="posts"></div></div>
             </section>
         </main>
         <footer>
@@ -65,86 +53,5 @@
     </div>
     <aside class="side-photo" aria-label="装饰图片"><img src="image/ban.jpg" alt="班级网站装饰图"></aside>
     <a class="floating-return" href="#top" aria-label="回到顶部"><img src="image/su7.jpg" alt="回到顶部"><span>TOP</span></a>
-    <script>
-        const API_BASE_URL = window.SITE_API_BASE_URL || 'https://cclyyds666-personal-site-h8kk.onrender.com';
-        let token = localStorage.getItem('token');
-        let isLogin = true;
-        function apiUrl(path) { return `${API_BASE_URL}${path}`; }
-        function setStatus(message) { document.getElementById('blog-status').textContent = message; }
-        function toggleAuth() {
-            isLogin = !isLogin;
-            document.getElementById('login-form').style.display = isLogin ? 'block' : 'none';
-            document.getElementById('register-form').style.display = isLogin ? 'none' : 'block';
-            document.querySelector('button[onclick="toggleAuth()"]').textContent = isLogin ? '切换到注册' : '切换到登录';
-        }
-        function setBlogVisible(visible) {
-            document.getElementById('auth-section').style.display = visible ? 'none' : 'grid';
-            document.getElementById('blog-content').style.display = visible ? 'grid' : 'none';
-        }
-        async function requestJson(path, options = {}) {
-            const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
-            const { headers: _headers, ...rest } = options;
-            const res = await fetch(apiUrl(path), { ...rest, headers });
-            const text = await res.text();
-            const data = text ? JSON.parse(text) : {};
-            if (!res.ok) {
-                const error = new Error(data.message || '请求失败');
-                error.status = res.status;
-                throw error;
-            }
-            return data;
-        }
-        async function register() {
-            try {
-                const username = document.getElementById('register-username').value;
-                const password = document.getElementById('register-password').value;
-                const data = await requestJson('/api/register', { method: 'POST', body: JSON.stringify({ username, password }) });
-                setStatus(data.message); toggleAuth();
-            } catch (error) { setStatus(error.message); }
-        }
-        async function login() {
-            try {
-                const username = document.getElementById('login-username').value;
-                const password = document.getElementById('login-password').value;
-                const data = await requestJson('/api/login', { method: 'POST', body: JSON.stringify({ username, password }) });
-                token = data.token; localStorage.setItem('token', token); setBlogVisible(true); setStatus('登录成功，可以发布新帖子。'); loadPosts();
-            } catch (error) { setStatus(error.message); }
-        }
-        function logout() { token = ''; localStorage.removeItem('token'); setBlogVisible(false); setStatus('已退出登录。'); }
-        async function createPost() {
-            try {
-                const title = document.getElementById('post-title').value;
-                const content = document.getElementById('post-content').value;
-                await requestJson('/api/posts', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ title, content }) });
-                document.getElementById('post-title').value = '';
-                document.getElementById('post-content').value = '';
-                setStatus('发布成功。');
-                loadPosts();
-            } catch (error) {
-                if (error.status === 401) {
-                    logout();
-                    setStatus('登录状态已失效，请重新登录后再发布。');
-                    alert('登录状态已失效，请重新登录后再发布。');
-                    return;
-                }
-                setStatus(error.message);
-                alert(error.message);
-            }
-        }
-        function createPostElement(post) {
-            const article = document.createElement('article'); const title = document.createElement('h4'); const content = document.createElement('p'); const meta = document.createElement('small');
-            article.className = 'post'; title.textContent = post.title; content.textContent = post.content; meta.textContent = `作者：${post.author} | ${new Date(post.createdAt).toLocaleString()}`;
-            article.append(title, content, meta); return article;
-        }
-        async function loadPosts() {
-            const postsDiv = document.getElementById('posts');
-            try {
-                const data = await requestJson('/api/posts?limit=6'); const posts = Array.isArray(data) ? data : data.items;
-                postsDiv.replaceChildren(...posts.map(createPostElement)); setStatus(posts.length ? '动态内容已同步。' : '还没有帖子，登录后发布第一篇吧。');
-            } catch (error) { postsDiv.innerHTML = '<article class="post"><h4>动态服务暂未连接</h4><p>如果这里部署在 GitHub Pages，请配置 Render API 地址后再使用博客发布功能。</p><small>静态内容仍可正常浏览。</small></article>'; setStatus('暂未连接到动态服务。'); }
-        }
-        if (token) setBlogVisible(true);
-        loadPosts();
-    </script>
 </body>
 </html>
