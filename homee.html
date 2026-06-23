@@ -30,6 +30,7 @@
                 <div class="hero-actions">
                     <a class="button primary" href="index.html">回到首页</a>
                     <a class="button ghost" href="board.html">去留言</a>
+                    <a class="button ghost" id="heroPostBtn" href="#" style="display:none;">发帖 / 新建帖子</a>
                 </div>
             </div>
         </header>
@@ -131,15 +132,24 @@
         function updateUserBar() {
             const left = document.getElementById('userBarLeft');
             const right = document.getElementById('userBarRight');
+            const heroPostBtn = document.getElementById('heroPostBtn');
             if (currentToken && currentUser) {
                 const avatarHtml = currentUser.avatarUrl
                     ? `<img class="user-avatar" src="${currentUser.avatarUrl}" alt="头像">`
                     : `<span class="user-avatar-placeholder">${(currentUser.nickname || currentUser.username || '?')[0].toUpperCase()}</span>`;
                 left.innerHTML = avatarHtml + '<div class="user-info"><span class="user-name">' + (currentUser.nickname || currentUser.username) + '</span><span class="user-nickname">@' + currentUser.username + '</span></div>';
                 right.innerHTML = '<button class="btn-ghost-sm" onclick="openEditorModal()">发帖</button><button class="btn-ghost-sm" onclick="openProfileModal()">修改资料</button><button class="btn-ghost-sm" onclick="handleLogout()">退出</button>';
+                if (heroPostBtn) {
+                    heroPostBtn.style.display = 'inline-flex';
+                    heroPostBtn.onclick = openEditorModal;
+                }
             } else {
                 left.innerHTML = '<span>欢迎访问</span>';
                 right.innerHTML = '<button class="btn-ghost-sm" id="authBtn" onclick="openAuthModal()">登录 / 注册</button>';
+                if (heroPostBtn) {
+                    heroPostBtn.style.display = 'none';
+                    heroPostBtn.onclick = null;
+                }
             }
         }
 
