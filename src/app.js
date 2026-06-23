@@ -18,6 +18,8 @@ function publicUser(row) {
   return {
     id: row.id,
     username: row.username,
+    nickname: row.nickname || null,
+    avatarUrl: row.avatar_url || null,
     createdAt: row.created_at
   };
 }
@@ -51,14 +53,15 @@ function messageResponse(message) {
   };
 }
 
-function ownsPost(db, postId, userId) {
-  const post = db.prepare('SELECT user_id FROM posts WHERE id = ?').get(postId);
-  if (!post) return null;
-  return post.user_id === userId;
+async function ownsPost(pool, postId, userId) {
+  const { rows } = await pool.query('SELECT user_id FROM posts WHERE id = $1', [postId]);
+  if (rows.length === 0) return null;
+  return rows[0].user_id === userId;
 }
 
 export function createApp(options = {}) {
   const db = options.db || createDatabase(options.dbPath);
+  const { pool } = db;
   const app = express();
 
   app.locals.db = db;
@@ -89,9 +92,10 @@ export function createApp(options = {}) {
     res.json({ ok: true, service: 'personal-site-api' });
   });
 
-  app.post('/api/register', (req, res) => {
+  // ----- 用户注册 -----
+  app.post('/api/register', async (req, res) => {
     const username = cleanText(req.body?.username);
-    const password = cleanText(req.body?.password);
+    const password = req.body?.password;
 
     if (username.length < 3 || username.length > 24) {
       return res.status(400).json({ message: '用户名长度需要在 3 到 24 个字符之间。' });
@@ -104,25 +108,29 @@ export function createApp(options = {}) {
     const { hash, salt } = hashPassword(password);
 
     try {
-      const result = db.prepare(`
-        INSERT INTO users (username, password_hash, password_salt)
-        VALUES (?, ?, ?)
-      `).run(username, hash, salt);
+      const { rows } = await pool.query(
+        `INSERT INTO users (username, password_hash, password_salt)
+         VALUES ($1, $2, $3)
+         RETURNING id, username, created_at`,
+        [username, hash, salt]
+      );
 
-      const user = db.prepare('SELECT id, username, created_at FROM users WHERE id = ?').get(result.lastInsertRowid);
-      return res.status(201).json({ message: '注册成功。', user: publicUser(user) });
+      return res.status(201).json({ message: '注册成功。', user: publicUser(rows[0]) });
     } catch (error) {
-      if (String(error.message).includes('UNIQUE')) {
+      if (String(error.message).includes('UNIQUE') || String(error.code) === '23505') {
         return res.status(409).json({ message: '该用户名已经被注册。' });
       }
       return res.status(500).json({ message: '注册失败，请稍后重试。' });
     }
   });
 
-  app.post('/api/login', (req, res) => {
+  // ----- 用户登录 -----
+  app.post('/api/login', async (req, res) => {
     const username = cleanText(req.body?.username);
-    const password = cleanText(req.body?.password);
-    const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+    const password = req.body?.password;
+
+    const { rows } = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+    const user = rows[0];
 
     if (!user || !verifyPassword(password, user.password_hash, user.password_salt)) {
       return res.status(401).json({ message: '用户名或密码错误。' });
@@ -135,33 +143,109 @@ export function createApp(options = {}) {
     });
   });
 
-  app.get('/api/posts', (req, res) => {
+  // ----- 获取当前用户个人资料（需认证） -----
+  app.get('/api/user/profile', authRequired, async (req, res) => {
+    const { rows } = await pool.query(
+      'SELECT id, username, nickname, avatar_url, created_at FROM users WHERE id = $1',
+      [req.user.id]
+    );
+    if (rows.length === 0) return res.status(404).json({ message: '用户不存在。' });
+    return res.json(publicUser(rows[0]));
+  });
+
+  // ----- 修改当前用户个人资料（需认证） -----
+  app.patch('/api/user/profile', authRequired, async (req, res) => {
+    const nickname = req.body?.nickname !== undefined ? cleanText(req.body.nickname) : undefined;
+    const avatarUrl = req.body?.avatarUrl !== undefined ? cleanText(req.body.avatarUrl) : undefined;
+
+    if (nickname !== undefined && (typeof nickname !== 'string' || nickname.length < 1 || nickname.length > 24)) {
+      return res.status(400).json({ message: '昵称长度需要在 1 到 24 个字符之间。' });
+    }
+    if (avatarUrl !== undefined && (typeof avatarUrl !== 'string' || avatarUrl.length > 512)) {
+      return res.status(400).json({ message: '头像 URL 长度不能超过 512 个字符。' });
+    }
+
+    const setClauses = [];
+    const params = [];
+    let idx = 1;
+
+    if (nickname !== undefined) {
+      setClauses.push(`nickname = $${idx++}`);
+      params.push(nickname || null);
+    }
+    if (avatarUrl !== undefined) {
+      setClauses.push(`avatar_url = $${idx++}`);
+      params.push(avatarUrl || null);
+    }
+
+    if (setClauses.length === 0) {
+      return res.status(400).json({ message: '没有需要修改的字段。' });
+    }
+
+    params.push(req.user.id);
+    const { rows } = await pool.query(
+      `UPDATE users SET ${setClauses.join(', ')} WHERE id = $${idx}
+       RETURNING id, username, nickname, avatar_url, created_at`,
+      params
+    );
+
+    return res.json(publicUser(rows[0]));
+  });
+
+  // ----- 查看公开用户个人资料（公开） -----
+  app.get('/api/users/:id/profile', async (req, res) => {
+    const userId = Number(req.params.id);
+    if (!Number.isFinite(userId)) return res.status(400).json({ message: '无效的用户 ID。' });
+
+    const { rows } = await pool.query(
+      'SELECT id, username, nickname, avatar_url, created_at FROM users WHERE id = $1',
+      [userId]
+    );
+    if (rows.length === 0) return res.status(404).json({ message: '用户不存在。' });
+    return res.json(publicUser(rows[0]));
+  });
+
+  // ----- 获取帖子列表 -----
+  app.get('/api/posts', async (req, res) => {
     const { limit, offset } = parsePagination(req.query);
-    const posts = db.prepare(`
-      SELECT posts.id, posts.title, posts.content, posts.created_at, posts.updated_at, users.username AS author
-      FROM posts
-      JOIN users ON users.id = posts.user_id
-      ORDER BY posts.created_at DESC, posts.id DESC
-      LIMIT ? OFFSET ?
-    `).all(limit, offset);
-    const total = db.prepare('SELECT COUNT(*) AS count FROM posts').get().count;
+    const [postsResult, totalResult] = await Promise.all([
+      pool.query(`
+        SELECT posts.id, posts.title, posts.content,
+               posts.created_at, posts.updated_at,
+               users.username AS author
+        FROM posts
+        JOIN users ON users.id = posts.user_id
+        ORDER BY posts.created_at DESC, posts.id DESC
+        LIMIT $1 OFFSET $2
+      `, [limit, offset]),
+      pool.query('SELECT COUNT(*)::int AS count FROM posts')
+    ]);
 
-    res.json({ items: posts.map(postResponse), total, limit, offset });
+    res.json({
+      items: postsResult.rows.map(postResponse),
+      total: totalResult.rows[0].count,
+      limit,
+      offset
+    });
   });
 
-  app.get('/api/posts/:id', (req, res) => {
-    const post = db.prepare(`
-      SELECT posts.id, posts.title, posts.content, posts.created_at, posts.updated_at, users.username AS author
+  // ----- 获取单篇帖子 -----
+  app.get('/api/posts/:id', async (req, res) => {
+    const { rows } = await pool.query(`
+      SELECT posts.id, posts.title, posts.content,
+             posts.created_at, posts.updated_at,
+             users.username AS author
       FROM posts
       JOIN users ON users.id = posts.user_id
-      WHERE posts.id = ?
-    `).get(req.params.id);
+      WHERE posts.id = $1
+    `, [req.params.id]);
 
-    if (!post) return res.status(404).json({ message: '没有找到这篇帖子。' });
-    return res.json(postResponse(post));
+    if (rows.length === 0) return res.status(404).json({ message: '没有找到这篇帖子。' });
+    return res.json(postResponse(rows[0]));
   });
 
-  app.post('/api/posts', authRequired, (req, res) => {
+  // ----- 创建帖子 -----
+  app.post('/api/posts', authRequired, async (req, res) => {
     const title = cleanText(req.body?.title);
     const content = cleanText(req.body?.content);
 
@@ -173,24 +257,22 @@ export function createApp(options = {}) {
       return res.status(400).json({ message: '标题或内容过长。' });
     }
 
-    const result = db.prepare(`
+    const { rows } = await pool.query(`
       INSERT INTO posts (user_id, title, content)
-      VALUES (?, ?, ?)
-    `).run(req.user.id, title, content);
+      VALUES ($1, $2, $3)
+      RETURNING id, title, content, created_at, updated_at
+    `, [req.user.id, title, content]);
 
-    const post = db.prepare(`
-      SELECT posts.id, posts.title, posts.content, posts.created_at, posts.updated_at, users.username AS author
-      FROM posts
-      JOIN users ON users.id = posts.user_id
-      WHERE posts.id = ?
-    `).get(result.lastInsertRowid);
+    const post = rows[0];
+    post.author = req.user.username;
 
     return res.status(201).json(postResponse(post));
   });
 
-  app.patch('/api/posts/:id', authRequired, (req, res) => {
+  // ----- 修改帖子 -----
+  app.patch('/api/posts/:id', authRequired, async (req, res) => {
     const postId = Number(req.params.id);
-    const allowed = ownsPost(db, postId, req.user.id);
+    const allowed = await ownsPost(pool, postId, req.user.id);
     if (allowed === null) return res.status(404).json({ message: '没有找到这篇帖子。' });
     if (!allowed) return res.status(403).json({ message: '只能修改自己发布的帖子。' });
 
@@ -200,47 +282,55 @@ export function createApp(options = {}) {
     if (!title || !content) return res.status(400).json({ message: '标题和内容都不能为空。' });
     if (title.length > 80 || content.length > 4000) return res.status(400).json({ message: '标题或内容过长。' });
 
-    db.prepare(`
+    const { rows } = await pool.query(`
       UPDATE posts
-      SET title = ?, content = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(title, content, postId);
+      SET title = $1, content = $2, updated_at = NOW()
+      WHERE id = $3
+      RETURNING id, title, content, created_at, updated_at
+    `, [title, content, postId]);
 
-    const post = db.prepare(`
-      SELECT posts.id, posts.title, posts.content, posts.created_at, posts.updated_at, users.username AS author
-      FROM posts
-      JOIN users ON users.id = posts.user_id
-      WHERE posts.id = ?
-    `).get(postId);
+    const post = rows[0];
+    post.author = req.user.username;
 
     return res.json(postResponse(post));
   });
 
-  app.delete('/api/posts/:id', authRequired, (req, res) => {
+  // ----- 删除帖子 -----
+  app.delete('/api/posts/:id', authRequired, async (req, res) => {
     const postId = Number(req.params.id);
-    const allowed = ownsPost(db, postId, req.user.id);
+    const allowed = await ownsPost(pool, postId, req.user.id);
     if (allowed === null) return res.status(404).json({ message: '没有找到这篇帖子。' });
     if (!allowed) return res.status(403).json({ message: '只能删除自己发布的帖子。' });
 
-    db.prepare('DELETE FROM posts WHERE id = ?').run(postId);
+    const { rowCount } = await pool.query('DELETE FROM posts WHERE id = $1', [postId]);
+    if (rowCount === 0) return res.status(404).json({ message: '没有找到这篇帖子。' });
     return res.status(204).end();
   });
 
-  app.get('/api/messages', (req, res) => {
+  // ----- 获取留言列表 -----
+  app.get('/api/messages', async (req, res) => {
     const { limit, offset } = parsePagination(req.query);
-    const messages = db.prepare(`
-      SELECT id, name, content, created_at
-      FROM messages
-      WHERE approved = 1
-      ORDER BY created_at DESC, id DESC
-      LIMIT ? OFFSET ?
-    `).all(limit, offset);
-    const total = db.prepare('SELECT COUNT(*) AS count FROM messages WHERE approved = 1').get().count;
+    const [messagesResult, totalResult] = await Promise.all([
+      pool.query(`
+        SELECT id, name, content, created_at
+        FROM messages
+        WHERE approved = 1
+        ORDER BY created_at DESC, id DESC
+        LIMIT $1 OFFSET $2
+      `, [limit, offset]),
+      pool.query("SELECT COUNT(*)::int AS count FROM messages WHERE approved = 1")
+    ]);
 
-    res.json({ items: messages.map(messageResponse), total, limit, offset });
+    res.json({
+      items: messagesResult.rows.map(messageResponse),
+      total: totalResult.rows[0].count,
+      limit,
+      offset
+    });
   });
 
-  app.post('/api/messages', (req, res) => {
+  // ----- 创建留言（无需登录） -----
+  app.post('/api/messages', async (req, res) => {
     const name = cleanText(req.body?.name) || '匿名朋友';
     const content = cleanText(req.body?.content);
     const website = cleanText(req.body?.website);
@@ -249,21 +339,23 @@ export function createApp(options = {}) {
     if (!content) return res.status(400).json({ message: '留言内容不能为空。' });
     if (name.length > 24 || content.length > 500) return res.status(400).json({ message: '昵称或留言内容过长。' });
 
-    const result = db.prepare(`
+    const { rows } = await pool.query(`
       INSERT INTO messages (name, content)
-      VALUES (?, ?)
-    `).run(name, content);
-    const message = db.prepare('SELECT id, name, content, created_at FROM messages WHERE id = ?').get(result.lastInsertRowid);
+      VALUES ($1, $2)
+      RETURNING id, name, content, created_at
+    `, [name, content]);
 
-    return res.status(201).json({ message: '留言成功。', item: messageResponse(message) });
+    return res.status(201).json({ message: '留言成功。', item: messageResponse(rows[0]) });
   });
 
-  app.delete('/api/messages/:id', authRequired, (req, res) => {
-    const result = db.prepare('DELETE FROM messages WHERE id = ?').run(req.params.id);
-    if (result.changes === 0) return res.status(404).json({ message: '没有找到这条留言。' });
+  // ----- 删除留言（需登录） -----
+  app.delete('/api/messages/:id', authRequired, async (req, res) => {
+    const { rowCount } = await pool.query('DELETE FROM messages WHERE id = $1', [req.params.id]);
+    if (rowCount === 0) return res.status(404).json({ message: '没有找到这条留言。' });
     return res.status(204).end();
   });
 
+  // ----- SPA fallback -----
   app.get('*splat', (req, res) => {
     res.sendFile(join(publicDir, 'index.html'));
   });
