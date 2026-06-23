@@ -31,6 +31,7 @@ export function createToken(user) {
   const payload = base64url(JSON.stringify({
     sub: String(user.id),
     username: user.username,
+    nickname: user.nickname || '',
     exp: Math.floor(Date.now() / 1000) + TOKEN_TTL_SECONDS
   }));
   const unsigned = `${header}.${payload}`;

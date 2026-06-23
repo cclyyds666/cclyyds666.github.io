@@ -8,7 +8,13 @@ export function authRequired(req, res, next) {
     return res.status(401).json({ message: '请先登录后再操作。' });
   }
 
-  const payload = verifyToken(token);
+  let payload;
+  try {
+    payload = verifyToken(token);
+  } catch {
+    return res.status(401).json({ message: '登录状态已失效，请重新登录。' });
+  }
+
   if (!payload) {
     return res.status(401).json({ message: '登录状态已失效，请重新登录。' });
   }

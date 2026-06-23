@@ -2,14 +2,22 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
 
-async function createUserAndToken(app, username = 'tester') {
-  await request(app)
+async function createUserAndToken(app, username = `tester_${Date.now().toString(36)}`) {
+  const register = await request(app)
     .post('/api/register')
     .send({ username, password: 'secret123' });
+
+  if (register.status !== 201) {
+    throw new Error(`register failed: ${register.status}`);
+  }
 
   const login = await request(app)
     .post('/api/login')
     .send({ username, password: 'secret123' });
+
+  if (login.status !== 200) {
+    throw new Error(`login failed: ${login.status}`);
+  }
 
   return login.body.token;
 }
@@ -17,22 +25,25 @@ async function createUserAndToken(app, username = 'tester') {
 describe('personal site API', () => {
   let app;
   let db;
+  const suffix = Date.now().toString(36);
 
-  beforeEach(() => {
+  beforeEach(async () => {
     app = createApp({ dbPath: ':memory:' });
     db = app.locals.db;
+    await db.migrate();
   });
 
-  afterEach(() => {
-    db.close();
+
+  afterEach(async () => {
+    await db.close();
   });
 
   it('serves the current frontend entry page', async () => {
     const res = await request(app).get('/');
 
     expect(res.status).toBe(200);
-    expect(res.text).toContain('id="blog-section"');
-    expect(res.text).toContain('loadPosts');
+    expect(res.text).toContain('陈同学的秘密花园');
+    expect(res.text).toContain('留言树洞');
   });
 
   it('returns health status', async () => {
@@ -45,10 +56,10 @@ describe('personal site API', () => {
   it('registers a user, logs in, and creates a post', async () => {
     const register = await request(app)
       .post('/api/register')
-      .send({ username: 'tester', password: 'secret123' });
+      .send({ username: `tester_${Date.now().toString(36)}`, password: 'secret123' });
 
     expect(register.status).toBe(201);
-    expect(register.body.user.username).toBe('tester');
+    expect(register.body.user.username).toMatch(/^tester_/);
 
     const login = await request(app)
       .post('/api/login')
@@ -94,6 +105,7 @@ describe('personal site API', () => {
       .send({ title: '新标题', content: '新内容' });
 
     expect(updated.status).toBe(200);
+    expect(updated.body).toBeTruthy();
     expect(updated.body.title).toBe('新标题');
 
     const detail = await request(app).get(`/api/posts/${created.body.id}`);
@@ -111,8 +123,8 @@ describe('personal site API', () => {
   });
 
   it('blocks users from editing other users posts', async () => {
-    const ownerToken = await createUserAndToken(app, 'owner');
-    const otherToken = await createUserAndToken(app, 'other');
+    const ownerToken = await createUserAndToken(app, `owner_${Date.now().toString(36)}`);
+    const otherToken = await createUserAndToken(app, `other_${Date.now().toString(36)}`);
     const created = await request(app)
       .post('/api/posts')
       .set('Authorization', `Bearer ${ownerToken}`)

@@ -1,6 +1,7 @@
 import express from 'express';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { createToken, hashPassword, verifyPassword } from './auth.js';
 import { createDatabase } from './db/database.js';
 import { authRequired } from './middleware/authRequired.js';
@@ -18,6 +19,8 @@ function publicUser(row) {
   return {
     id: row.id,
     username: row.username,
+    nickname: row.nickname || null,
+    avatarUrl: row.avatar_url || null,
     createdAt: row.created_at
   };
 }
@@ -51,14 +54,98 @@ function messageResponse(message) {
   };
 }
 
-function ownsPost(db, postId, userId) {
-  const post = db.prepare('SELECT user_id FROM posts WHERE id = ?').get(postId);
-  if (!post) return null;
-  return post.user_id === userId;
+async function ownsPost(pool, postId, userId) {
+  const { rows } = await pool.query('SELECT user_id FROM posts WHERE id = $1', [postId]);
+  if (rows.length === 0) return null;
+  return rows[0].user_id === userId;
+}
+
+function createMemoryDatabase(dbPath = ':memory:') {
+  const db = new DatabaseSync(dbPath);
+
+  db.exec('PRAGMA foreign_keys = ON;');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      password_salt TEXT NOT NULL,
+      nickname TEXT,
+      avatar_url TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS posts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      content TEXT NOT NULL,
+      approved INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  function query(sql, params = []) {
+    const normalized = sql.replace(/\$(\d+)/g, '?');
+    const upper = sql.trim().toUpperCase();
+
+    if (upper.startsWith('SELECT')) {
+      const rows = db.prepare(normalized).all(...params);
+      return Promise.resolve({ rows, rowCount: rows.length });
+    }
+
+    if (upper.startsWith('INSERT')) {
+      const result = db.prepare(normalized).run(...params);
+      if (upper.includes('RETURNING')) {
+        const table = sql.match(/INSERT\s+INTO\s+(\w+)/i)?.[1];
+        const lastId = Number(result.lastInsertRowid);
+        const returning = sql.match(/RETURNING\s+(.+)$/i)?.[1] || '*';
+        const rows = table ? db.prepare(`SELECT ${returning} FROM ${table} WHERE id = ?`).all(lastId) : [];
+        return Promise.resolve({ rows, rowCount: rows.length });
+      }
+      return Promise.resolve({ rows: [], rowCount: Number(result.changes) });
+    }
+
+    if (upper.startsWith('UPDATE') || upper.startsWith('DELETE')) {
+      const result = db.prepare(normalized).run(...params);
+      return Promise.resolve({ rows: [], rowCount: Number(result.changes) });
+    }
+
+    db.prepare(normalized).run(...params);
+    return Promise.resolve({ rows: [], rowCount: 0 });
+  }
+
+  return {
+    pool: {
+      query,
+      connect: async () => ({ query, release: () => {} }),
+      end: async () => db.close()
+    },
+    migrate: async () => {},
+    close: async () => db.close()
+  };
+}
+
+function resolveDatabase(dbPath) {
+  if (dbPath === ':memory:') {
+    return createMemoryDatabase(dbPath);
+  }
+
+  return createDatabase(dbPath);
 }
 
 export function createApp(options = {}) {
-  const db = options.db || createDatabase(options.dbPath);
+  const db = options.db || resolveDatabase(options.dbPath);
+  const { pool } = db;
   const app = express();
 
   app.locals.db = db;
@@ -89,7 +176,7 @@ export function createApp(options = {}) {
     res.json({ ok: true, service: 'personal-site-api' });
   });
 
-  app.post('/api/register', (req, res) => {
+  app.post('/api/register', async (req, res) => {
     const username = cleanText(req.body?.username);
     const password = cleanText(req.body?.password);
 
@@ -104,25 +191,28 @@ export function createApp(options = {}) {
     const { hash, salt } = hashPassword(password);
 
     try {
-      const result = db.prepare(`
-        INSERT INTO users (username, password_hash, password_salt)
-        VALUES (?, ?, ?)
-      `).run(username, hash, salt);
+      const { rows } = await pool.query(
+        `INSERT INTO users (username, password_hash, password_salt)
+         VALUES ($1, $2, $3)
+         RETURNING id, username, created_at`,
+        [username, hash, salt]
+      );
 
-      const user = db.prepare('SELECT id, username, created_at FROM users WHERE id = ?').get(result.lastInsertRowid);
-      return res.status(201).json({ message: '注册成功。', user: publicUser(user) });
+      return res.status(201).json({ message: '注册成功。', user: publicUser(rows[0]) });
     } catch (error) {
-      if (String(error.message).includes('UNIQUE')) {
+      if (String(error.message).includes('UNIQUE') || String(error.code) === '23505') {
         return res.status(409).json({ message: '该用户名已经被注册。' });
       }
       return res.status(500).json({ message: '注册失败，请稍后重试。' });
     }
   });
 
-  app.post('/api/login', (req, res) => {
+  app.post('/api/login', async (req, res) => {
     const username = cleanText(req.body?.username);
     const password = cleanText(req.body?.password);
-    const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+
+    const { rows } = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+    const user = rows[0];
 
     if (!user || !verifyPassword(password, user.password_hash, user.password_salt)) {
       return res.status(401).json({ message: '用户名或密码错误。' });
@@ -135,33 +225,44 @@ export function createApp(options = {}) {
     });
   });
 
-  app.get('/api/posts', (req, res) => {
+  app.get('/api/posts', async (req, res) => {
     const { limit, offset } = parsePagination(req.query);
-    const posts = db.prepare(`
-      SELECT posts.id, posts.title, posts.content, posts.created_at, posts.updated_at, users.username AS author
-      FROM posts
-      JOIN users ON users.id = posts.user_id
-      ORDER BY posts.created_at DESC, posts.id DESC
-      LIMIT ? OFFSET ?
-    `).all(limit, offset);
-    const total = db.prepare('SELECT COUNT(*) AS count FROM posts').get().count;
+    const [postsResult, totalResult] = await Promise.all([
+      pool.query(`
+        SELECT posts.id, posts.title, posts.content,
+               posts.created_at, posts.updated_at,
+               users.username AS author
+        FROM posts
+        JOIN users ON users.id = posts.user_id
+        ORDER BY posts.created_at DESC, posts.id DESC
+        LIMIT $1 OFFSET $2
+      `, [limit, offset]),
+      pool.query('SELECT COUNT(*)::int AS count FROM posts')
+    ]);
 
-    res.json({ items: posts.map(postResponse), total, limit, offset });
+    res.json({
+      items: postsResult.rows.map(postResponse),
+      total: totalResult.rows[0].count,
+      limit,
+      offset
+    });
   });
 
-  app.get('/api/posts/:id', (req, res) => {
-    const post = db.prepare(`
-      SELECT posts.id, posts.title, posts.content, posts.created_at, posts.updated_at, users.username AS author
+  app.get('/api/posts/:id', async (req, res) => {
+    const { rows } = await pool.query(`
+      SELECT posts.id, posts.title, posts.content,
+             posts.created_at, posts.updated_at,
+             users.username AS author
       FROM posts
       JOIN users ON users.id = posts.user_id
-      WHERE posts.id = ?
-    `).get(req.params.id);
+      WHERE posts.id = $1
+    `, [req.params.id]);
 
-    if (!post) return res.status(404).json({ message: '没有找到这篇帖子。' });
-    return res.json(postResponse(post));
+    if (rows.length === 0) return res.status(404).json({ message: '没有找到这篇帖子。' });
+    return res.json(postResponse(rows[0]));
   });
 
-  app.post('/api/posts', authRequired, (req, res) => {
+  app.post('/api/posts', authRequired, async (req, res) => {
     const title = cleanText(req.body?.title);
     const content = cleanText(req.body?.content);
 
@@ -173,24 +274,21 @@ export function createApp(options = {}) {
       return res.status(400).json({ message: '标题或内容过长。' });
     }
 
-    const result = db.prepare(`
+    const { rows } = await pool.query(`
       INSERT INTO posts (user_id, title, content)
-      VALUES (?, ?, ?)
-    `).run(req.user.id, title, content);
+      VALUES ($1, $2, $3)
+      RETURNING id, title, content, created_at, updated_at
+    `, [req.user.id, title, content]);
 
-    const post = db.prepare(`
-      SELECT posts.id, posts.title, posts.content, posts.created_at, posts.updated_at, users.username AS author
-      FROM posts
-      JOIN users ON users.id = posts.user_id
-      WHERE posts.id = ?
-    `).get(result.lastInsertRowid);
+    const post = rows[0];
+    post.author = req.user.username;
 
     return res.status(201).json(postResponse(post));
   });
 
-  app.patch('/api/posts/:id', authRequired, (req, res) => {
+  app.patch('/api/posts/:id', authRequired, async (req, res) => {
     const postId = Number(req.params.id);
-    const allowed = ownsPost(db, postId, req.user.id);
+    const allowed = await ownsPost(pool, postId, req.user.id);
     if (allowed === null) return res.status(404).json({ message: '没有找到这篇帖子。' });
     if (!allowed) return res.status(403).json({ message: '只能修改自己发布的帖子。' });
 
@@ -200,47 +298,52 @@ export function createApp(options = {}) {
     if (!title || !content) return res.status(400).json({ message: '标题和内容都不能为空。' });
     if (title.length > 80 || content.length > 4000) return res.status(400).json({ message: '标题或内容过长。' });
 
-    db.prepare(`
+    const { rows } = await pool.query(`
       UPDATE posts
-      SET title = ?, content = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(title, content, postId);
+      SET title = $1, content = $2, updated_at = NOW()
+      WHERE id = $3
+      RETURNING id, title, content, created_at, updated_at
+    `, [title, content, postId]);
 
-    const post = db.prepare(`
-      SELECT posts.id, posts.title, posts.content, posts.created_at, posts.updated_at, users.username AS author
-      FROM posts
-      JOIN users ON users.id = posts.user_id
-      WHERE posts.id = ?
-    `).get(postId);
+    const post = rows[0];
+    post.author = req.user.username;
 
     return res.json(postResponse(post));
   });
 
-  app.delete('/api/posts/:id', authRequired, (req, res) => {
+  app.delete('/api/posts/:id', authRequired, async (req, res) => {
     const postId = Number(req.params.id);
-    const allowed = ownsPost(db, postId, req.user.id);
+    const allowed = await ownsPost(pool, postId, req.user.id);
     if (allowed === null) return res.status(404).json({ message: '没有找到这篇帖子。' });
     if (!allowed) return res.status(403).json({ message: '只能删除自己发布的帖子。' });
 
-    db.prepare('DELETE FROM posts WHERE id = ?').run(postId);
+    const { rowCount } = await pool.query('DELETE FROM posts WHERE id = $1', [postId]);
+    if (rowCount === 0) return res.status(404).json({ message: '没有找到这篇帖子。' });
     return res.status(204).end();
   });
 
-  app.get('/api/messages', (req, res) => {
+  app.get('/api/messages', async (req, res) => {
     const { limit, offset } = parsePagination(req.query);
-    const messages = db.prepare(`
-      SELECT id, name, content, created_at
-      FROM messages
-      WHERE approved = 1
-      ORDER BY created_at DESC, id DESC
-      LIMIT ? OFFSET ?
-    `).all(limit, offset);
-    const total = db.prepare('SELECT COUNT(*) AS count FROM messages WHERE approved = 1').get().count;
+    const [messagesResult, totalResult] = await Promise.all([
+      pool.query(`
+        SELECT id, name, content, created_at
+        FROM messages
+        WHERE approved = 1
+        ORDER BY created_at DESC, id DESC
+        LIMIT $1 OFFSET $2
+      `, [limit, offset]),
+      pool.query("SELECT COUNT(*)::int AS count FROM messages WHERE approved = 1")
+    ]);
 
-    res.json({ items: messages.map(messageResponse), total, limit, offset });
+    res.json({
+      items: messagesResult.rows.map(messageResponse),
+      total: totalResult.rows[0].count,
+      limit,
+      offset
+    });
   });
 
-  app.post('/api/messages', (req, res) => {
+  app.post('/api/messages', async (req, res) => {
     const name = cleanText(req.body?.name) || '匿名朋友';
     const content = cleanText(req.body?.content);
     const website = cleanText(req.body?.website);
@@ -249,18 +352,18 @@ export function createApp(options = {}) {
     if (!content) return res.status(400).json({ message: '留言内容不能为空。' });
     if (name.length > 24 || content.length > 500) return res.status(400).json({ message: '昵称或留言内容过长。' });
 
-    const result = db.prepare(`
+    const { rows } = await pool.query(`
       INSERT INTO messages (name, content)
-      VALUES (?, ?)
-    `).run(name, content);
-    const message = db.prepare('SELECT id, name, content, created_at FROM messages WHERE id = ?').get(result.lastInsertRowid);
+      VALUES ($1, $2)
+      RETURNING id, name, content, created_at
+    `, [name, content]);
 
-    return res.status(201).json({ message: '留言成功。', item: messageResponse(message) });
+    return res.status(201).json({ message: '留言成功。', item: messageResponse(rows[0]) });
   });
 
-  app.delete('/api/messages/:id', authRequired, (req, res) => {
-    const result = db.prepare('DELETE FROM messages WHERE id = ?').run(req.params.id);
-    if (result.changes === 0) return res.status(404).json({ message: '没有找到这条留言。' });
+  app.delete('/api/messages/:id', authRequired, async (req, res) => {
+    const { rowCount } = await pool.query('DELETE FROM messages WHERE id = $1', [req.params.id]);
+    if (rowCount === 0) return res.status(404).json({ message: '没有找到这条留言。' });
     return res.status(204).end();
   });
 

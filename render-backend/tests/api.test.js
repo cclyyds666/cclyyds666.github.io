@@ -23,16 +23,16 @@ describe('personal site API', () => {
     db = app.locals.db;
   });
 
-  afterEach(() => {
-    db.close();
+  afterEach(async () => {
+    await db.close();
   });
 
   it('serves the current frontend entry page', async () => {
     const res = await request(app).get('/');
 
     expect(res.status).toBe(200);
-    expect(res.text).toContain('id="blog-section"');
-    expect(res.text).toContain('loadPosts');
+    expect(res.text).toContain('陈同学的秘密花园');
+    expect(res.text).toContain('留言树洞');
   });
 
   it('returns health status', async () => {
