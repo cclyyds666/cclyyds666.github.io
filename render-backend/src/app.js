@@ -1,6 +1,7 @@
 import express from 'express';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import crypto from 'node:crypto';
 import { createToken, hashPassword, verifyPassword } from './auth.js';
 import { createDatabase } from './db/database.js';
 import { authRequired } from './middleware/authRequired.js';
@@ -94,6 +95,29 @@ export function createApp(options = {}) {
       res.json({ ok: true, service: 'personal-site-api', db: 'connected' });
     } catch (error) {
       res.status(503).json({ ok: false, service: 'personal-site-api', db: 'disconnected', error: error.message });
+    }
+  });
+
+  // ----- 记录访问 -----
+  app.post('/api/visit', async (req, res) => {
+    const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+    const path = cleanText(req.body?.path) || '/';
+    const hash = crypto.createHash('sha256').update(ip).digest('hex').slice(0, 8);
+    try {
+      await pool.query('INSERT INTO visits (ip_hash, path) VALUES ($1, $2)', [hash, path]);
+      res.json({ ok: true });
+    } catch {
+      res.status(200).json({ ok: false });
+    }
+  });
+
+  // ----- 获取访问总数 -----
+  app.get('/api/visits/count', async (_req, res) => {
+    try {
+      const { rows } = await pool.query('SELECT COUNT(*)::int AS count FROM visits');
+      res.json({ total: rows[0].count });
+    } catch {
+      res.json({ total: 0 });
     }
   });
 
@@ -258,7 +282,7 @@ export function createApp(options = {}) {
       return res.status(400).json({ message: '标题和内容都不能为空。' });
     }
 
-    if (title.length > 80 || content.length > 4000) {
+    if (title.length > 80 || content.length > 50000) {
       return res.status(400).json({ message: '标题或内容过长。' });
     }
 
@@ -342,7 +366,7 @@ export function createApp(options = {}) {
 
     if (website) return res.status(400).json({ message: '提交失败，请稍后再试。' });
     if (!content) return res.status(400).json({ message: '留言内容不能为空。' });
-    if (name.length > 24 || content.length > 500) return res.status(400).json({ message: '昵称或留言内容过长。' });
+    if (name.length > 24 || content.length > 5000) return res.status(400).json({ message: '昵称或留言内容过长。' });
 
     const { rows } = await pool.query(`
       INSERT INTO messages (name, content)

@@ -21,6 +21,7 @@
                     <li><a href="memory.html">回忆录</a></li>
                     <li><a href="board.html">留言树洞</a></li>
                     <li><a href="last.html">写在最后</a></li>
+                    <li><button class="theme-toggle" onclick="toggleTheme()" aria-label="切换暗色模式">🌙</button></li>
                 </ul>
             </nav>
             <div>
@@ -55,7 +56,7 @@
         </main>
         <footer>
             <p>愿这里一直保存热爱、真诚和慢慢变好的自己。</p>
-            <p>&copy; 2026 Made by Ccl</p>
+            <p>&copy; 2026 Made by Ccl &nbsp;|&nbsp; 本站累计访问 <span id="visitCount">--</span> 次</p>
         </footer>
     </div>
 
@@ -87,8 +88,13 @@
             <button class="close-modal" onclick="closeEditorModal()">✕</button>
             <h2>发布新帖子</h2>
             <input type="text" id="postTitle" placeholder="标题">
-            <textarea id="postContent" placeholder="内容" style="min-height:180px;"></textarea>
-            <button type="button" onclick="handleCreatePost()">发布</button>
+            <textarea id="postContent" placeholder="内容（支持 Markdown，图片会自动转 base64 嵌入）" style="min-height:180px;"></textarea>
+            <input type="file" id="postImages" accept="image/*" multiple style="display:none;">
+            <div style="display:flex;gap:8px;margin-top:8px;">
+                <button type="button" class="button ghost" onclick="document.getElementById('postImages').click()" style="flex:1;">📷 添加图片</button>
+                <button type="button" class="button primary" onclick="handleCreatePost()" style="flex:1;">发布</button>
+            </div>
+            <div class="image-preview-grid" id="imagePreviewGrid"></div>
             <p id="editorError" class="status-text" style="margin-top:10px;color:var(--rose);"></p>
         </div>
     </div>
@@ -108,10 +114,23 @@
     <aside class="side-photo" aria-label="装饰图片"><img src="image/ban.jpg" alt="班级网站装饰图"></aside>
     <a class="floating-return" href="#top" aria-label="回到顶部"><img src="image/su7.jpg" alt="回到顶部"><span>TOP</span></a>
 
+    <!-- 网易云音乐浮动播放器 -->
+    <div class="music-player-float hidden" id="musicPlayerFloat">
+        <div class="player-header">
+            <span>🎵 网易云音乐</span>
+            <button class="collapse-btn" onclick="toggleMusicCollapse()">−</button>
+        </div>
+        <iframe src="https://music.163.com/outchain/player?type=0&id=505947676&auto=1&height=66" allow="autoplay"></iframe>
+    </div>
+    <button class="music-player-toggle hidden" id="musicToggle" onclick="toggleMusicPlayer()">🎵</button>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script>
         const API_BASE_URL = window.SITE_API_BASE_URL || 'https://cclyyds666-personal-site-h8kk.onrender.com';
         let currentToken = localStorage.getItem('token');
         let currentUser = null;
+        let pendingImages = [];
+
         function apiUrl(path) { return `${API_BASE_URL}${path}`; }
         async function requestJson(path, options = {}) {
             const { headers: optHeaders, ...restOptions } = options;
@@ -122,14 +141,69 @@
             if (!res.ok) throw new Error(data.message || '请求失败');
             return data;
         }
+
+        // ===== 暗色模式 =====
+        (function initTheme() {
+            const saved = localStorage.getItem('theme');
+            if (saved === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+        })();
+        function toggleTheme() {
+            const el = document.documentElement;
+            const isDark = el.getAttribute('data-theme') === 'dark';
+            el.setAttribute('data-theme', isDark ? '' : 'dark');
+            localStorage.setItem('theme', isDark ? 'light' : 'dark');
+            document.querySelectorAll('.theme-toggle').forEach(btn => btn.textContent = isDark ? '🌙' : '☀️');
+        }
+
+        // ===== 网易云音乐播放器 =====
+        function toggleMusicPlayer() {
+            const fp = document.getElementById('musicPlayerFloat');
+            const tg = document.getElementById('musicToggle');
+            const show = fp.classList.toggle('hidden');
+            tg.classList.toggle('hidden', show);
+        }
+        function toggleMusicCollapse() {
+            const fp = document.getElementById('musicPlayerFloat');
+            fp.classList.toggle('collapsed');
+        }
+
+        // ===== 图片上传 =====
+        document.getElementById('postImages')?.addEventListener('change', function(e) {
+            const files = Array.from(e.target.files);
+            files.forEach(file => {
+                if (pendingImages.length >= 5) return;
+                if (file.size > 2 * 1024 * 1024) { alert('图片不能超过 2MB'); return; }
+                const reader = new FileReader();
+                reader.onload = function(ev) {
+                    const base64 = ev.target.result;
+                    const idx = pendingImages.length;
+                    pendingImages.push(base64);
+                    const grid = document.getElementById('imagePreviewGrid');
+                    const item = document.createElement('div');
+                    item.className = 'image-preview-item';
+                    item.innerHTML = '<img src="' + base64 + '">' +
+                        '<button class="remove-img" onclick="removeImage(' + idx + ')">×</button>';
+                    grid.appendChild(item);
+                };
+                reader.readAsDataURL(file);
+            });
+            this.value = '';
+        });
+        function removeImage(idx) {
+            pendingImages.splice(idx, 1);
+            const grid = document.getElementById('imagePreviewGrid');
+            if (grid.children[idx]) grid.removeChild(grid.children[idx]);
+        }
+
+        // ===== 用户栏 =====
         function updateUserBar() {
             const left = document.getElementById('userBarLeft');
             const right = document.getElementById('userBarRight');
             const heroPostBtn = document.getElementById('heroPostBtn');
             if (currentToken && currentUser) {
                 const avatarHtml = currentUser.avatarUrl
-                    ? `<img class="user-avatar" src="${currentUser.avatarUrl}" alt="头像">`
-                    : `<span class="user-avatar-placeholder">${(currentUser.nickname || currentUser.username || '?')[0].toUpperCase()}</span>`;
+                    ? '<img class="user-avatar" src="' + currentUser.avatarUrl + '" alt="头像">'
+                    : '<span class="user-avatar-placeholder">' + (currentUser.nickname || currentUser.username || '?')[0].toUpperCase() + '</span>';
                 left.innerHTML = avatarHtml + '<div class="user-info"><span class="user-name">' + (currentUser.nickname || currentUser.username) + '</span><span class="user-nickname">@' + currentUser.username + '</span></div>';
                 right.innerHTML = '<button class="btn-ghost-sm" onclick="openEditorModal()">发帖</button><button class="btn-ghost-sm" onclick="openProfileModal()">修改资料</button><button class="btn-ghost-sm" onclick="handleLogout()">退出</button>';
                 if (heroPostBtn) { heroPostBtn.style.display = 'inline-flex'; heroPostBtn.onclick = openEditorModal; }
@@ -201,13 +275,15 @@
                 closeProfileModal();
             } catch (err) { errorEl.textContent = err.message; }
         }
-        function openEditorModal() { document.getElementById('editorModal').classList.remove('hidden'); }
+        function openEditorModal() { document.getElementById('editorModal').classList.remove('hidden'); pendingImages = []; document.getElementById('imagePreviewGrid').innerHTML = ''; }
         function closeEditorModal() { document.getElementById('editorModal').classList.add('hidden'); document.getElementById('editorError').textContent = ''; }
         async function handleCreatePost() {
             const title = document.getElementById('postTitle').value.trim();
-            const content = document.getElementById('postContent').value.trim();
+            let content = document.getElementById('postContent').value;
             const errorEl = document.getElementById('editorError');
-            if (!title || !content) { errorEl.textContent = '标题和内容不能为空'; return; }
+            if (!title || !content.trim()) { errorEl.textContent = '标题和内容不能为空'; return; }
+            // 追加 base64 图片
+            pendingImages.forEach((img, i) => { content += '\n\n![image' + i + '](' + img + ')'; });
             try {
                 await requestJson('/api/posts', { method: 'POST', headers: { Authorization: `Bearer ${currentToken}` }, body: JSON.stringify({ title, content }) });
                 document.getElementById('postTitle').value = '';
@@ -221,10 +297,13 @@
             article.className = 'post';
             const title = document.createElement('h4');
             title.textContent = post.title;
-            const content = document.createElement('p');
-            content.textContent = post.content;
+            const content = document.createElement('div');
+            content.className = 'post-body';
+            content.style.whiteSpace = 'pre-wrap';
+            content.style.margin = '8px 0';
+            content.innerHTML = marked.parse(post.content);
             const meta = document.createElement('small');
-            meta.textContent = `作者：${post.author} | ${new Date(post.createdAt).toLocaleString()}`;
+            meta.textContent = '作者：' + post.author + ' | ' + new Date(post.createdAt).toLocaleString();
             article.append(title, content, meta);
             return article;
         }
@@ -242,10 +321,29 @@
                 statusEl.textContent = '暂未连接到动态服务。';
             }
         }
+
+        // ===== 访问统计 =====
+        async function loadVisitCount() {
+            try {
+                const data = await requestJson('/api/visits/count');
+                document.getElementById('visitCount').textContent = data.total;
+            } catch { /* ignore */ }
+        }
+        function recordVisit() {
+            const path = window.location.pathname;
+            if (navigator.sendBeacon) {
+                navigator.sendBeacon(apiUrl('/api/visit'), JSON.stringify({ path }));
+            } else {
+                fetch(apiUrl('/api/visit'), { method: 'POST', body: JSON.stringify({ path }), headers: { 'Content-Type': 'application/json' } }).catch(() => {});
+            }
+        }
+
         (async function init() {
             if (currentToken) await fetchCurrentUser();
             updateUserBar();
             loadPosts();
+            loadVisitCount();
+            recordVisit();
             document.getElementById('authModal').addEventListener('click', function(e) { if (e.target === this) closeAuthModal(); });
             document.getElementById('editorModal').addEventListener('click', function(e) { if (e.target === this) closeEditorModal(); });
         })();

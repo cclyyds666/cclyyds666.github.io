@@ -94,6 +94,26 @@ export function createDatabase(connectionString) {
         $$;
       `);
 
+      // visits 表（访问量统计）
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS visits (
+          id SERIAL PRIMARY KEY,
+          ip_hash TEXT NOT NULL,
+          path TEXT NOT NULL,
+          visited_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      await client.query(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_visits_visited_at') THEN
+            CREATE INDEX idx_visits_visited_at ON visits(visited_at DESC);
+          END IF;
+        END;
+        $$;
+      `);
+
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');

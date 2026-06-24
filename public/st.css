@@ -678,3 +678,198 @@ footer {
 }
 
 .hidden { display: none !important; }
+
+/* ===== 暗色模式 ===== */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --ink: #e2e8f0;
+        --muted: #94a3b8;
+        --paper: rgba(30, 41, 59, 0.9);
+        --paper-strong: #1e293b;
+        --line: rgba(148, 163, 184, 0.15);
+        --teal: #14b8a6;
+        --teal-dark: #0d9488;
+        --rose: #f472b6;
+        --gold: #fbbf24;
+        --shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+        --soft-shadow: 0 14px 34px rgba(0, 0, 0, 0.3);
+    }
+    body {
+        color: var(--ink);
+        background:
+            radial-gradient(circle at top left, rgba(244, 114, 182, 0.15), transparent 34rem),
+            radial-gradient(circle at 88% 18%, rgba(20, 184, 166, 0.12), transparent 28rem),
+            linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(2, 6, 23, 0.98)),
+            url("image/h1.jpg") center / cover fixed;
+    }
+    body::before {
+        background-image: linear-gradient(rgba(148, 163, 184, 0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(148, 163, 184, 0.06) 1px, transparent 1px);
+        mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.3), transparent 78%);
+    }
+    input, textarea {
+        background: #0f172a;
+        color: var(--ink);
+    }
+    .post, .message-card { background: var(--paper-strong); }
+    .auth-form, .editor-card, .message-form { background: var(--paper-strong); }
+    .modal-content { background: var(--paper-strong); }
+    .floating-return { background: var(--paper-strong); }
+}
+
+[data-theme="dark"] {
+    --ink: #e2e8f0;
+    --muted: #94a3b8;
+    --paper: rgba(30, 41, 59, 0.9);
+    --paper-strong: #1e293b;
+    --line: rgba(148, 163, 184, 0.15);
+    --teal: #14b8a6;
+    --teal-dark: #0d9488;
+    --rose: #f472b6;
+    --gold: #fbbf24;
+    --shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+    --soft-shadow: 0 14px 34px rgba(0, 0, 0, 0.3);
+}
+[data-theme="dark"] body {
+    color: var(--ink);
+    background:
+        radial-gradient(circle at top left, rgba(244, 114, 182, 0.15), transparent 34rem),
+        radial-gradient(circle at 88% 18%, rgba(20, 184, 166, 0.12), transparent 28rem),
+        linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(2, 6, 23, 0.98)),
+        url("image/h1.jpg") center / cover fixed;
+}
+[data-theme="dark"] body::before {
+    background-image: linear-gradient(rgba(148, 163, 184, 0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(148, 163, 184, 0.06) 1px, transparent 1px);
+    mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.3), transparent 78%);
+}
+[data-theme="dark"] input, [data-theme="dark"] textarea {
+    background: #0f172a;
+    color: var(--ink);
+}
+[data-theme="dark"] .post, [data-theme="dark"] .message-card { background: var(--paper-strong); }
+[data-theme="dark"] .auth-form, [data-theme="dark"] .editor-card, [data-theme="dark"] .message-form { background: var(--paper-strong); }
+[data-theme="dark"] .modal-content { background: var(--paper-strong); }
+[data-theme="dark"] .floating-return { background: var(--paper-strong); }
+
+/* ===== 暗色切换按钮 ===== */
+.theme-toggle {
+    min-height: 36px;
+    padding: 6px 12px;
+    color: #fff;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: transform 0.2s ease, background 0.2s ease;
+}
+.theme-toggle:hover {
+    background: rgba(255, 255, 255, 0.24);
+    transform: translateY(-1px);
+}
+
+/* ===== 网易云音乐浮动播放器 ===== */
+.music-player-float {
+    position: fixed;
+    right: 20px;
+    bottom: 100px;
+    z-index: 90;
+    width: 320px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(14px);
+    overflow: hidden;
+    transition: transform 0.3s ease, opacity 0.3s ease;
+}
+.music-player-float.collapsed {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    cursor: pointer;
+}
+.music-player-float.collapsed iframe { display: none; }
+.music-player-float .player-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: linear-gradient(135deg, var(--teal), var(--teal-dark));
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+}
+.music-player-float .player-header .collapse-btn {
+    background: rgba(255,255,255,0.2);
+    border: 0;
+    color: #fff;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 16px;
+    display: grid;
+    place-items: center;
+}
+.music-player-float iframe {
+    width: 100%;
+    height: 86px;
+    border: 0;
+}
+.music-player-toggle {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 90;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--rose), var(--violet));
+    color: #fff;
+    border: 0;
+    font-size: 22px;
+    cursor: pointer;
+    box-shadow: 0 8px 24px rgba(217, 70, 111, 0.3);
+    transition: transform 0.2s;
+}
+.music-player-toggle:hover { transform: scale(1.1); }
+
+/* ===== 图片预览网格 ===== */
+.image-preview-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+    margin-bottom: 4px;
+}
+.image-preview-item {
+    position: relative;
+    width: 72px;
+    height: 72px;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+}
+.image-preview-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.image-preview-item .remove-img {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.6);
+    color: #fff;
+    border: 0;
+    font-size: 12px;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    line-height: 1;
+}
+.image-preview-item .remove-img:hover { background: var(--rose); }
