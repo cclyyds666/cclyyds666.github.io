@@ -3,9 +3,8 @@ services:
     name: cclyyds666-personal-site
     runtime: node
     plan: free
-    rootDir: render-backend
-    buildCommand: npm ci
-    startCommand: npm start
+    buildCommand: cd render-backend && npm ci
+    startCommand: cd render-backend && npm start
     healthCheckPath: /api/health
     autoDeployTrigger: commit
     envVars:
