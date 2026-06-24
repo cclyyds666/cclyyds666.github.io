@@ -282,7 +282,7 @@ export function createApp(options = {}) {
       return res.status(400).json({ message: '标题和内容都不能为空。' });
     }
 
-    if (title.length > 80 || content.length > 50000) {
+    if (title.length > 80 || content.length > 500000) {
       return res.status(400).json({ message: '标题或内容过长。' });
     }
 
