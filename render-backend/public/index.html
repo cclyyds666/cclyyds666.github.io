@@ -114,7 +114,8 @@
         let currentUser = null;
         function apiUrl(path) { return `${API_BASE_URL}${path}`; }
         async function requestJson(path, options = {}) {
-            const res = await fetch(apiUrl(path), { headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options });
+            const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+            const res = await fetch(apiUrl(path), { headers, ...options });
             const text = await res.text();
             const data = text ? JSON.parse(text) : {};
             if (!res.ok) throw new Error(data.message || '请求失败');

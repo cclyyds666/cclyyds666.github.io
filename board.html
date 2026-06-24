@@ -57,7 +57,7 @@
         const API_BASE_URL = window.SITE_API_BASE_URL || 'https://cclyyds666-personal-site-h8kk.onrender.com';
         function apiUrl(path) { return `${API_BASE_URL}${path}`; }
         function status(message) { document.getElementById('board-status').textContent = message; }
-        async function requestJson(path, options = {}) { const res = await fetch(apiUrl(path), { headers: { 'Content-Type': 'application/json' }, ...options }); const text = await res.text(); const data = text ? JSON.parse(text) : {}; if (!res.ok) throw new Error(data.message || '请求失败'); return data; }
+        async function requestJson(path, options = {}) { const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) }; const res = await fetch(apiUrl(path), { headers, ...options }); const text = await res.text(); const data = text ? JSON.parse(text) : {}; if (!res.ok) throw new Error(data.message || '请求失败'); return data; }
         function renderMessage(item) { const card = document.createElement('article'); const name = document.createElement('h4'); const content = document.createElement('p'); const meta = document.createElement('small'); card.className = 'message-card'; name.textContent = item.name; content.textContent = item.content; meta.textContent = new Date(item.createdAt).toLocaleString(); card.append(name, content, meta); return card; }
         async function loadMessages() {
             const wrap = document.getElementById('messages');
