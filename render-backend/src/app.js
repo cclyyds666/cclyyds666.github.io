@@ -88,8 +88,13 @@ export function createApp(options = {}) {
   app.use(express.json({ limit: '1mb' }));
   app.use(express.static(publicDir));
 
-  app.get('/api/health', (req, res) => {
-    res.json({ ok: true, service: 'personal-site-api' });
+  app.get('/api/health', async (req, res) => {
+    try {
+      await pool.query('SELECT 1');
+      res.json({ ok: true, service: 'personal-site-api', db: 'connected' });
+    } catch (error) {
+      res.status(503).json({ ok: false, service: 'personal-site-api', db: 'disconnected', error: error.message });
+    }
   });
 
   // ----- 用户注册 -----

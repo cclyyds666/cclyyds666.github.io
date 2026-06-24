@@ -3,6 +3,7 @@ services:
     name: cclyyds666-personal-site
     runtime: node
     plan: free
+    rootDir: render-backend
     buildCommand: npm ci
     startCommand: npm start
     healthCheckPath: /api/health
