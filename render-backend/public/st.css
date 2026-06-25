@@ -822,18 +822,20 @@ footer {
     right: 20px;
     bottom: 20px;
     z-index: 90;
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
+    min-width: 88px;
+    height: 48px;
+    padding: 0 18px;
+    border-radius: 999px;
     background: linear-gradient(135deg, var(--rose), var(--violet));
     color: #fff;
     border: 0;
-    font-size: 22px;
+    font-size: 16px;
+    font-weight: 700;
     cursor: pointer;
     box-shadow: 0 8px 24px rgba(217, 70, 111, 0.3);
     transition: transform 0.2s;
 }
-.music-player-toggle:hover { transform: scale(1.1); }
+.music-player-toggle:hover { transform: scale(1.06); }
 
 /* ===== 图片预览网格 ===== */
 .image-preview-grid {

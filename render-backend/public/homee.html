@@ -125,9 +125,9 @@
             <span>🎵 网易云音乐</span>
             <button class="collapse-btn" onclick="toggleMusicCollapse()">−</button>
         </div>
-        <iframe src="https://music.163.com/outchain/player?type=0&id=505947676&auto=1&height=66" allow="autoplay"></iframe>
+        <iframe data-src="https://music.163.com/outchain/player?type=0&id=505947676&auto=1&height=66" allow="autoplay"></iframe>
     </div>
-    <button class="music-player-toggle hidden" id="musicToggle" onclick="toggleMusicPlayer()">🎵</button>
+    <button class="music-player-toggle" id="musicToggle" onclick="toggleMusicPlayer()" aria-label="打开音乐播放器">音乐</button>
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script>
@@ -162,10 +162,7 @@
 
         // ===== 网易云音乐播放器 =====
         function toggleMusicPlayer() {
-            const fp = document.getElementById('musicPlayerFloat');
-            const tg = document.getElementById('musicToggle');
-            const show = fp.classList.toggle('hidden');
-            tg.classList.toggle('hidden', show);
+            window.open('https://music.163.com/outchain/player?type=0&id=505947676&auto=1&height=66', 'siteMusicPlayer', 'width=360,height=120,menubar=no,toolbar=no,location=no,status=no');
         }
         function toggleMusicCollapse() {
             const fp = document.getElementById('musicPlayerFloat');
