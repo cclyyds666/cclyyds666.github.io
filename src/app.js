@@ -6,7 +6,7 @@ import { createDatabase } from './db/database.js';
 import { authRequired } from './middleware/authRequired.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const publicDir = join(__dirname, '..', 'public');
+const publicDir = join(__dirname, '..', 'render-backend', 'public');
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
 
