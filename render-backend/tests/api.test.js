@@ -169,6 +169,18 @@ describe('personal site API', () => {
     expect(res.text).toContain('loadPosts');
   });
 
+  it('reads ai config from env vars', async () => {
+    const token = await createUserAndToken(app, 'config-user');
+    const res = await request(app)
+      .get('/api/ai/config')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.enabled).toBeTypeOf('boolean');
+    expect(res.body.baseUrl).toBeTypeOf('string');
+    expect(res.body.model).toBeTypeOf('string');
+  });
+
   it('returns health status', async () => {
     const res = await request(app).get('/api/health');
 
@@ -302,4 +314,5 @@ describe('personal site API', () => {
     const messages = await request(app).get('/api/messages');
     expect(messages.body.items).toHaveLength(0);
   });
+
 });
