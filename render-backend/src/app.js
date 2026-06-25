@@ -89,6 +89,10 @@ export function createApp(options = {}) {
   app.use(express.json({ limit: '1mb' }));
   app.use(express.static(publicDir));
 
+  app.get('/', (req, res) => {
+    res.sendFile(join(publicDir, 'index.html'));
+  });
+
   app.get('/api/health', async (req, res) => {
     try {
       await pool.query('SELECT 1');
