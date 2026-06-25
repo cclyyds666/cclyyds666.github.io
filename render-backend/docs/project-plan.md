@@ -5,13 +5,13 @@
 - 静态个人主页：展示首页 Hero、入口卡片、背景音乐、图片资源和页脚。
 - 用户注册与登录：前端已调用 `/api/register` 和 `/api/login`，后端使用密码哈希保存账号。
 - 个人博客/留言能力：登录后可调用 `/api/posts` 发布文章，所有访客可读取文章列表。
-- SQLite 数据库：默认数据库文件为 `data/site.sqlite`，Render 可通过 `DATABASE_PATH` 调整。
+- PostgreSQL 数据库：Render 通过 `DATABASE_URL` 连接数据库，前端通过 Render API 获取动态内容。
 - 自动化测试：使用 Vitest + Supertest 覆盖首页静态访问、注册、登录、发帖、未登录拦截。
 
 ## 目录结构
 
 ```text
-public/              前端静态页面、样式、图片资源
+public/              前端静态页面、样式、图片资源；Render 与 GitHub Pages 共用这一套
 src/                 Node.js 后端源码
 src/db/              数据库连接与建表逻辑
 src/middleware/      Express 中间件

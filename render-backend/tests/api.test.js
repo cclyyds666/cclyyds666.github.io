@@ -2,6 +2,140 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
 
+function createTestDb() {
+  const state = {
+    users: [],
+    posts: [],
+    messages: [],
+    visits: [],
+    nextUserId: 1,
+    nextPostId: 1,
+    nextMessageId: 1,
+    nextVisitId: 1,
+  };
+  const copy = (value) => JSON.parse(JSON.stringify(value));
+  const withAuthor = (post) => ({
+    ...post,
+    author: state.users.find((user) => user.id === post.user_id)?.username,
+  });
+
+  return {
+    pool: {
+      async query(sql, params = []) {
+        const text = sql.replace(/\s+/g, ' ').trim().toLowerCase();
+
+        if (text === 'select 1') return { rows: [{}] };
+        if (text.startsWith('insert into users')) {
+          const [username, passwordHash, passwordSalt] = params;
+          if (state.users.some((user) => user.username === username)) {
+            const error = new Error('duplicate username');
+            error.code = '23505';
+            throw error;
+          }
+          const row = {
+            id: state.nextUserId++,
+            username,
+            password_hash: passwordHash,
+            password_salt: passwordSalt,
+            nickname: null,
+            avatar_url: null,
+            created_at: new Date().toISOString(),
+          };
+          state.users.push(row);
+          return { rows: [copy(row)] };
+        }
+        if (text.startsWith('select * from users where username')) {
+          return { rows: copy(state.users.filter((user) => user.username === params[0])) };
+        }
+        if (text.startsWith('select id, username, nickname, avatar_url, created_at from users where id')) {
+          return { rows: copy(state.users.filter((user) => user.id === params[0])) };
+        }
+        if (text.startsWith('update users set')) {
+          const user = state.users.find((item) => item.id === params[params.length - 1]);
+          if (!user) return { rows: [] };
+          if (text.includes('nickname')) user.nickname = params[0];
+          if (text.includes('avatar_url')) user.avatar_url = params[text.includes('nickname') ? 1 : 0];
+          return { rows: [copy(user)] };
+        }
+        if (text.startsWith('insert into posts')) {
+          const [userId, title, content] = params;
+          const row = {
+            id: state.nextPostId++,
+            user_id: userId,
+            title,
+            content,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+          state.posts.push(row);
+          return { rows: [copy(row)] };
+        }
+        if (text.startsWith('select user_id from posts where id')) {
+          const post = state.posts.find((item) => item.id === Number(params[0]));
+          return { rows: post ? [{ user_id: post.user_id }] : [] };
+        }
+        if (text.startsWith('select posts.id')) {
+          const rows = state.posts.map(withAuthor).sort((a, b) => b.id - a.id);
+          if (text.includes('where posts.id')) {
+            return { rows: copy(rows.filter((post) => post.id === Number(params[0]))) };
+          }
+          return { rows: copy(rows.slice(params[1], params[1] + params[0])) };
+        }
+        if (text === 'select count(*)::int as count from posts') {
+          return { rows: [{ count: state.posts.length }] };
+        }
+        if (text.startsWith('update posts')) {
+          const [title, content, id] = params;
+          const post = state.posts.find((item) => item.id === Number(id));
+          if (!post) return { rows: [] };
+          post.title = title;
+          post.content = content;
+          post.updated_at = new Date().toISOString();
+          return { rows: [copy(post)] };
+        }
+        if (text.startsWith('delete from posts')) {
+          const before = state.posts.length;
+          state.posts = state.posts.filter((post) => post.id !== Number(params[0]));
+          return { rowCount: before - state.posts.length };
+        }
+        if (text.startsWith('insert into messages')) {
+          const [name, content] = params;
+          const row = {
+            id: state.nextMessageId++,
+            name,
+            content,
+            approved: 1,
+            created_at: new Date().toISOString(),
+          };
+          state.messages.push(row);
+          return { rows: [copy(row)] };
+        }
+        if (text.startsWith('select id, name, content, created_at from messages')) {
+          return { rows: copy(state.messages.filter((message) => message.approved === 1).sort((a, b) => b.id - a.id).slice(params[1], params[1] + params[0])) };
+        }
+        if (text === 'select count(*)::int as count from messages where approved = 1') {
+          return { rows: [{ count: state.messages.filter((message) => message.approved === 1).length }] };
+        }
+        if (text.startsWith('delete from messages')) {
+          const before = state.messages.length;
+          state.messages = state.messages.filter((message) => message.id !== Number(params[0]));
+          return { rowCount: before - state.messages.length };
+        }
+        if (text.startsWith('insert into visits')) {
+          state.visits.push({ id: state.nextVisitId++, ip_hash: params[0], path: params[1] });
+          return { rows: [] };
+        }
+        if (text === 'select count(*)::int as count from visits') {
+          return { rows: [{ count: state.visits.length }] };
+        }
+
+        throw new Error(`Unsupported test query: ${sql}`);
+      },
+    },
+    close() {},
+  };
+}
+
 async function createUserAndToken(app, username = 'tester') {
   await request(app)
     .post('/api/register')
@@ -19,8 +153,8 @@ describe('personal site API', () => {
   let db;
 
   beforeEach(() => {
-    app = createApp({ dbPath: ':memory:' });
-    db = app.locals.db;
+    db = createTestDb();
+    app = createApp({ db });
   });
 
   afterEach(() => {
@@ -31,7 +165,7 @@ describe('personal site API', () => {
     const res = await request(app).get('/');
 
     expect(res.status).toBe(200);
-    expect(res.text).toContain('id="blog-section"');
+    expect(res.text).toContain('id="postSection"');
     expect(res.text).toContain('loadPosts');
   });
 
@@ -39,7 +173,7 @@ describe('personal site API', () => {
     const res = await request(app).get('/api/health');
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ok: true, service: 'personal-site-api' });
+    expect(res.body).toEqual({ ok: true, service: 'personal-site-api', db: 'connected' });
   });
 
   it('registers a user, logs in, and creates a post', async () => {
