@@ -50,7 +50,11 @@
         document.querySelectorAll('.theme-toggle').forEach(btn => btn.textContent = isDark ? '🌙' : '☀️');
     }
     function toggleMusicPlayer() {
-        window.open('https://music.163.com/outchain/player?type=0&id=505947676&auto=1&height=66', 'siteMusicPlayer', 'width=360,height=120,menubar=no,toolbar=no,location=no,status=no');
+        const playlists = [505947676, 28267903, 6051860690, 377867812, 7482340418, 24381216, 488135710, 1901371647, 4954436098, 26128853, 7642502973];
+        const today = new Date();
+        const seed = today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate();
+        const id = playlists[seed % playlists.length];
+        window.open('https://music.163.com/outchain/player?type=0&id=' + id + '&auto=1&height=66', 'siteMusicPlayer', 'width=360,height=120,menubar=no,toolbar=no,location=no,status=no');
     }
     function toggleMusicCollapse() {
         const fp = document.getElementById('musicPlayerFloat');

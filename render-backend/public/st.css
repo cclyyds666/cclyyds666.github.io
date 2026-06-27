@@ -207,6 +207,22 @@ textarea:focus-visible {
     margin-top: 34px;
 }
 
+.ai-grid {
+    display: grid;
+    gap: 12px;
+    margin-top: 18px;
+}
+
+.ai-answer {
+    margin-top: 18px;
+    padding: 16px 18px;
+    min-height: 88px;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.72);
+    white-space: pre-wrap;
+}
+
 .button,
 button {
     display: inline-flex;

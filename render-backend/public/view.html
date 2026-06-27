@@ -49,8 +49,12 @@
         localStorage.setItem('theme', isDark ? 'light' : 'dark');
         document.querySelectorAll('.theme-toggle').forEach(btn => btn.textContent = isDark ? '🌙' : '☀️');
     }
+    // ===== 网易云音乐播放器 =====
+    var MUSIC_PLAYLISTS=[505947676,2829883282,7796054940,6934225627,3127583314,2446963088,456277834,8688731920];
+    function getDailyPlaylist(){var today=new Date();var seed=today.getFullYear()*10000+(today.getMonth()+1)*100+today.getDate();return MUSIC_PLAYLISTS[seed%MUSIC_PLAYLISTS.length];}
     function toggleMusicPlayer() {
-        window.open('https://music.163.com/outchain/player?type=0&id=505947676&auto=1&height=66', 'siteMusicPlayer', 'width=360,height=120,menubar=no,toolbar=no,location=no,status=no');
+        var id=getDailyPlaylist();
+        window.open('https://music.163.com/outchain/player?type=0&id='+id+'&auto=1&height=66', 'siteMusicPlayer', 'width=360,height=120,menubar=no,toolbar=no,location=no,status=no');
     }
     function toggleMusicCollapse() {
         const fp = document.getElementById('musicPlayerFloat');

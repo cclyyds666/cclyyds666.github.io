@@ -46,6 +46,23 @@
                 </div>
             </div>
 
+            <section class="panel" id="aiSection">
+                <div class="section-heading">
+                    <p class="section-kicker">AI</p>
+                    <h2>AI 智能助手</h2>
+                    <p class="status-text">填写你自己的 AI 接口地址、API Key 和模型后即可使用。</p>
+                </div>
+                <div class="ai-grid">
+                    <input type="text" id="aiBaseUrl" placeholder="AI 接口地址，例如 https://api.openai.com/v1">
+                    <input type="password" id="aiApiKey" placeholder="API Key">
+                    <input type="text" id="aiModel" placeholder="模型名称，例如 gpt-4o-mini">
+                    <textarea id="aiPrompt" placeholder="想问什么？" style="min-height:140px;"></textarea>
+                    <button type="button" class="button primary" onclick="handleAiChat()">发送</button>
+                    <p id="aiStatus" class="status-text"></p>
+                    <div id="aiAnswer" class="ai-answer"></div>
+                </div>
+            </section>
+
             <!-- PostList: 帖子列表 -->
             <section class="panel" id="postSection">
                 <div class="section-heading">
@@ -161,8 +178,31 @@
         }
 
         // ===== 网易云音乐播放器 =====
+        const MUSIC_PLAYLISTS = [
+            '505947676',   // 原有歌单
+            '24381616',    // 网易云热歌榜
+            '19723756',    // 飙升榜
+            '3779629',     // 新歌榜
+            '2884035',     // 原创榜
+            '1978921798',  // 心动模式
+            '2250011882',  // 每日推荐
+            '3119419262',  // 私人FM
+            '121567464',   // 学习工作
+            '2045626430',  // 深夜emo
+            '2829883282',  // 白噪音
+            '3222080828',  // 民谣
+        ];
+
+        function getDailyPlaylistId() {
+            const today = new Date();
+            const seed = today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate();
+            const index = seed % MUSIC_PLAYLISTS.length;
+            return MUSIC_PLAYLISTS[index];
+        }
+
         function toggleMusicPlayer() {
-            window.open('https://music.163.com/outchain/player?type=0&id=505947676&auto=1&height=66', 'siteMusicPlayer', 'width=360,height=120,menubar=no,toolbar=no,location=no,status=no');
+            const playlistId = getDailyPlaylistId();
+            window.open(`https://music.163.com/outchain/player?type=0&id=${playlistId}&auto=1&height=66`, 'siteMusicPlayer', 'width=360,height=120,menubar=no,toolbar=no,location=no,status=no');
         }
         function toggleMusicCollapse() {
             const fp = document.getElementById('musicPlayerFloat');
@@ -334,6 +374,27 @@
                 closeEditorModal();
                 loadPosts();
             } catch (err) { errorEl.textContent = err.message; }
+        }
+
+        async function handleAiChat() {
+            const baseUrl = document.getElementById('aiBaseUrl').value.trim();
+            const apiKey = document.getElementById('aiApiKey').value.trim();
+            const model = document.getElementById('aiModel').value.trim();
+            const prompt = document.getElementById('aiPrompt').value.trim();
+            const status = document.getElementById('aiStatus');
+            const answer = document.getElementById('aiAnswer');
+            if (!prompt) { status.textContent = '请输入问题'; return; }
+            status.textContent = '正在请求 AI……';
+            answer.textContent = '';
+            try {
+                const data = await requestJson('/api/ai/chat', {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${currentToken}` },
+                    body: JSON.stringify({ baseUrl, apiKey, model, prompt })
+                });
+                answer.textContent = data.answer || 'AI 没有返回内容。';
+                status.textContent = '完成';
+            } catch (err) { status.textContent = err.message; }
         }
 
         // ===== Posts =====
