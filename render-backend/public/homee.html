@@ -52,6 +52,11 @@
                     <h2>AI 智能助手</h2>
                     <p class="status-text">登录后即可使用 Agnes AI 智能问答，API Key 已由后端安全配置。</p>
                 </div>
+                <div class="daily-quote-card">
+                    <p class="section-kicker">Daily Quote</p>
+                    <blockquote id="dailyQuoteText">正在生成今日 AI 签……</blockquote>
+                    <p class="status-text" id="dailyQuoteMeta">每天自动刷新一次</p>
+                </div>
                 <div class="ai-grid">
                     <textarea id="aiPrompt" placeholder="想问什么？" style="min-height:140px;"></textarea>
                     <button type="button" class="button primary" onclick="handleAiChat()">发送</button>
@@ -157,7 +162,9 @@
             const headers = { 'Content-Type': 'application/json', ...optHeaders };
             const res = await fetch(apiUrl(path), { headers, ...restOptions });
             const text = await res.text();
-            const data = text ? JSON.parse(text) : {};
+            let data = {};
+            try { data = text ? JSON.parse(text) : {}; }
+            catch { throw new Error(res.ok ? '响应格式错误' : '服务暂时不可用'); }
             if (!res.ok) throw new Error(data.message || '请求失败');
             return data;
         }
@@ -374,6 +381,19 @@
             } catch (err) { errorEl.textContent = err.message; }
         }
 
+        async function loadDailyQuote() {
+            const quoteEl = document.getElementById('dailyQuoteText');
+            const metaEl = document.getElementById('dailyQuoteMeta');
+            try {
+                const data = await requestJson('/api/ai/daily-quote');
+                quoteEl.textContent = '“' + (data.quote || '愿你今天也能把普通日子，过成一首温柔的小诗。') + '”';
+                metaEl.textContent = data.cached ? '今日签已缓存，明天自动刷新' : '今日签已生成，明天自动刷新';
+            } catch {
+                quoteEl.textContent = '“愿你今天也能把普通日子，过成一首温柔的小诗。”';
+                metaEl.textContent = '今日签暂用默认文案';
+            }
+        }
+
         async function handleAiChat(promptOverride) {
             const prompt = (promptOverride || document.getElementById('aiPrompt').value).trim();
             const status = document.getElementById('aiStatus');
@@ -451,6 +471,7 @@
         (async function init() {
             if (currentToken) await fetchCurrentUser();
             updateUserBar();
+            loadDailyQuote();
             loadPosts();
             loadVisitCount();
             recordVisit();

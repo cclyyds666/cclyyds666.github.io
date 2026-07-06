@@ -1,6 +1,6 @@
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createApp } from '../src/app.js';
+import { createApp, resetDailyQuoteCacheForTest } from '../src/app.js';
 
 function createTestDb() {
   const state = {
@@ -153,6 +153,7 @@ describe('personal site API', () => {
   let db;
 
   beforeEach(() => {
+    resetDailyQuoteCacheForTest();
     db = createTestDb();
     app = createApp({ db });
   });
@@ -174,6 +175,42 @@ describe('personal site API', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true, service: 'personal-site-api', db: 'connected' });
+  });
+
+  it('caches a daily ai quote after the first generation', async () => {
+    const originalFetch = global.fetch;
+    const originalApiKey = process.env.AI_API_KEY;
+    process.env.AI_API_KEY = 'test-key';
+    let calls = 0;
+    global.fetch = async (url, options) => {
+      calls += 1;
+      expect(url).toBe('https://apihub.agnes-ai.com/v1/chat/completions');
+      expect(options.headers.Authorization).toBe('Bearer test-key');
+      const body = JSON.parse(options.body);
+      expect(body.model).toBe('agnes-1.5-flash');
+      expect(body.messages[0].content).toContain('今日签');
+      return {
+        ok: true,
+        text: async () => JSON.stringify({ choices: [{ message: { content: '愿晨光替你收藏今天的温柔。' } }] })
+      };
+    };
+
+    try {
+      const first = await request(app).get('/api/ai/daily-quote');
+      const second = await request(app).get('/api/ai/daily-quote');
+
+      expect(first.status).toBe(200);
+      expect(first.body.quote).toBe('愿晨光替你收藏今天的温柔。');
+      expect(first.body.cached).toBe(false);
+      expect(second.status).toBe(200);
+      expect(second.body.quote).toBe('愿晨光替你收藏今天的温柔。');
+      expect(second.body.cached).toBe(true);
+      expect(calls).toBe(1);
+    } finally {
+      global.fetch = originalFetch;
+      if (originalApiKey === undefined) delete process.env.AI_API_KEY;
+      else process.env.AI_API_KEY = originalApiKey;
+    }
   });
 
   it('proxies ai chat requests through the backend', async () => {

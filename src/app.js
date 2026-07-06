@@ -11,6 +11,8 @@ const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
 const DEFAULT_AI_API_BASE_URL = 'https://apihub.agnes-ai.com/v1';
 const DEFAULT_AI_MODEL = 'agnes-1.5-flash';
+const FALLBACK_DAILY_QUOTE = '愿你今天也能把普通日子，过成一首温柔的小诗。';
+let dailyQuoteCache = { date: '', quote: '' };
 
 function cleanText(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -65,10 +67,45 @@ function cleanBaseUrl(value) {
   }
 }
 
+async function requestAiCompletion(messages) {
+  const baseUrl = cleanBaseUrl(process.env.AI_API_BASE_URL || DEFAULT_AI_API_BASE_URL);
+  const apiKey = cleanText(process.env.AI_API_KEY);
+  const model = cleanText(process.env.AI_MODEL) || DEFAULT_AI_MODEL;
+
+  if (!apiKey) {
+    const error = new Error('AI 服务尚未配置 API Key。');
+    error.status = 500;
+    throw error;
+  }
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({ model, messages })
+  });
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : {};
+
+  if (!response.ok) {
+    const error = new Error(data?.error?.message || data?.message || 'AI 请求失败。');
+    error.status = response.status;
+    throw error;
+  }
+
+  return cleanText(data?.choices?.[0]?.message?.content);
+}
+
 async function ownsPost(pool, postId, userId) {
   const { rows } = await pool.query('SELECT user_id FROM posts WHERE id = $1', [postId]);
   if (rows.length === 0) return null;
   return rows[0].user_id === userId;
+}
+
+export function resetDailyQuoteCacheForTest() {
+  dailyQuoteCache = { date: '', quote: '' };
 }
 
 export function createApp(options = {}) {
@@ -165,44 +202,37 @@ export function createApp(options = {}) {
   });
 
   app.post('/api/ai/chat', authRequired, async (req, res) => {
-    const baseUrl = cleanBaseUrl(process.env.AI_API_BASE_URL || DEFAULT_AI_API_BASE_URL);
-    const apiKey = cleanText(process.env.AI_API_KEY);
-    const model = cleanText(process.env.AI_MODEL) || DEFAULT_AI_MODEL;
     const prompt = cleanText(req.body?.prompt);
-
-    if (!apiKey) {
-      return res.status(500).json({ message: 'AI 服务尚未配置 API Key。' });
-    }
 
     if (!prompt) {
       return res.status(400).json({ message: '请输入要提问的内容。' });
     }
 
     try {
-      const response = await fetch(`${baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model,
-          messages: [{ role: 'user', content: prompt }]
-        })
-      });
-      const text = await response.text();
-      const data = text ? JSON.parse(text) : {};
-
-      if (!response.ok) {
-        return res.status(response.status).json({
-          message: data?.error?.message || data?.message || 'AI 请求失败。'
-        });
-      }
-
-      const answer = data?.choices?.[0]?.message?.content || '';
+      const answer = await requestAiCompletion([{ role: 'user', content: prompt }]);
       return res.json({ answer });
+    } catch (error) {
+      return res.status(error.status || 502).json({ message: error.message || 'AI 服务暂时不可用。' });
+    }
+  });
+
+  app.get('/api/ai/daily-quote', async (_req, res) => {
+    const today = new Date().toISOString().slice(0, 10);
+    if (dailyQuoteCache.date === today && dailyQuoteCache.quote) {
+      return res.json({ quote: dailyQuoteCache.quote, date: today, cached: true });
+    }
+
+    try {
+      const quote = await requestAiCompletion([
+        {
+          role: 'user',
+          content: '请为个人网站“陈同学的秘密花园”生成一句今日签。要求：中文，温柔、诗意、青春、校园感，不超过40个字，不要解释，只输出句子。'
+        }
+      ]);
+      dailyQuoteCache = { date: today, quote: quote || FALLBACK_DAILY_QUOTE };
+      return res.json({ quote: dailyQuoteCache.quote, date: today, cached: false });
     } catch {
-      return res.status(502).json({ message: 'AI 服务暂时不可用。' });
+      return res.json({ quote: FALLBACK_DAILY_QUOTE, date: today, cached: false });
     }
   });
 

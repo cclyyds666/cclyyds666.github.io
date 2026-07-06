@@ -207,6 +207,23 @@ textarea:focus-visible {
     margin-top: 34px;
 }
 
+.daily-quote-card {
+    margin-top: 18px;
+    padding: 20px 22px;
+    border: 1px solid rgba(216, 155, 43, 0.24);
+    border-radius: 20px;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.82), rgba(255, 248, 232, 0.74));
+    box-shadow: var(--soft-shadow);
+}
+
+.daily-quote-card blockquote {
+    margin-top: 8px;
+    color: var(--ink);
+    font-size: clamp(20px, 3vw, 30px);
+    font-weight: 800;
+    line-height: 1.55;
+}
+
 .ai-grid {
     display: grid;
     gap: 12px;
