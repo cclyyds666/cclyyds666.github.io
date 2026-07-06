@@ -67,6 +67,22 @@ function cleanBaseUrl(value) {
   }
 }
 
+function currentChinaTimeContext() {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    weekday: 'long',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
+  return `当前中国标准时间（UTC+8，Asia/Shanghai）是：${formatter.format(now)}。如果用户询问当前时间、日期或星期，请以这个时间为准。你不能实时联网查询天气；如果用户询问天气，请说明需要接入天气接口才能获取实时天气。`;
+}
+
 async function requestAiCompletion(messages) {
   const baseUrl = cleanBaseUrl(process.env.AI_API_BASE_URL || DEFAULT_AI_API_BASE_URL);
   const apiKey = cleanText(process.env.AI_API_KEY);
@@ -78,13 +94,15 @@ async function requestAiCompletion(messages) {
     throw error;
   }
 
+  const contextMessages = [{ role: 'system', content: currentChinaTimeContext() }, ...messages];
+
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`
     },
-    body: JSON.stringify({ model, messages })
+    body: JSON.stringify({ model, messages: contextMessages })
   });
   const text = await response.text();
   const data = text ? JSON.parse(text) : {};

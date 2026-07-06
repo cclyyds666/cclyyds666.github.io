@@ -188,7 +188,9 @@ describe('personal site API', () => {
       expect(options.headers.Authorization).toBe('Bearer test-key');
       const body = JSON.parse(options.body);
       expect(body.model).toBe('agnes-1.5-flash');
-      expect(body.messages[0].content).toContain('今日签');
+      expect(body.messages[0].role).toBe('system');
+      expect(body.messages[0].content).toContain('当前中国标准时间');
+      expect(body.messages[1].content).toContain('今日签');
       return {
         ok: true,
         text: async () => JSON.stringify({ choices: [{ message: { content: '愿晨光替你收藏今天的温柔。' } }] })
@@ -221,10 +223,11 @@ describe('personal site API', () => {
     global.fetch = async (url, options) => {
       expect(url).toBe('https://apihub.agnes-ai.com/v1/chat/completions');
       expect(options.headers.Authorization).toBe('Bearer test-key');
-      expect(JSON.parse(options.body)).toEqual({
-        model: 'agnes-1.5-flash',
-        messages: [{ role: 'user', content: 'hello' }]
-      });
+      const body = JSON.parse(options.body);
+      expect(body.model).toBe('agnes-1.5-flash');
+      expect(body.messages[0].role).toBe('system');
+      expect(body.messages[0].content).toContain('当前中国标准时间');
+      expect(body.messages[1]).toEqual({ role: 'user', content: 'hello' });
       return {
         ok: true,
         text: async () => JSON.stringify({ choices: [{ message: { content: '你好，世界。' } }] })
