@@ -9,6 +9,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const publicDir = join(__dirname, '..', 'render-backend', 'public');
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
+const DEFAULT_AI_API_BASE_URL = 'https://apihub.agnes-ai.com/v1';
+const DEFAULT_AI_MODEL = 'agnes-1.5-flash';
 
 function cleanText(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -51,6 +53,16 @@ function messageResponse(message) {
     content: message.content,
     createdAt: message.created_at
   };
+}
+
+function cleanBaseUrl(value) {
+  const input = cleanText(value);
+  if (!input) return '';
+  try {
+    return new URL(input).toString().replace(/\/$/, '');
+  } catch {
+    return '';
+  }
 }
 
 async function ownsPost(pool, postId, userId) {
@@ -141,6 +153,57 @@ export function createApp(options = {}) {
       token: createToken(user),
       user: publicUser(user)
     });
+  });
+
+  // ----- AI 智能问答（需认证） -----
+  app.get('/api/ai/config', authRequired, (_req, res) => {
+    res.json({
+      enabled: Boolean(process.env.AI_API_KEY),
+      baseUrl: cleanBaseUrl(process.env.AI_API_BASE_URL || DEFAULT_AI_API_BASE_URL),
+      model: cleanText(process.env.AI_MODEL) || DEFAULT_AI_MODEL
+    });
+  });
+
+  app.post('/api/ai/chat', authRequired, async (req, res) => {
+    const baseUrl = cleanBaseUrl(process.env.AI_API_BASE_URL || DEFAULT_AI_API_BASE_URL);
+    const apiKey = cleanText(process.env.AI_API_KEY);
+    const model = cleanText(process.env.AI_MODEL) || DEFAULT_AI_MODEL;
+    const prompt = cleanText(req.body?.prompt);
+
+    if (!apiKey) {
+      return res.status(500).json({ message: 'AI 服务尚未配置 API Key。' });
+    }
+
+    if (!prompt) {
+      return res.status(400).json({ message: '请输入要提问的内容。' });
+    }
+
+    try {
+      const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: prompt }]
+        })
+      });
+      const text = await response.text();
+      const data = text ? JSON.parse(text) : {};
+
+      if (!response.ok) {
+        return res.status(response.status).json({
+          message: data?.error?.message || data?.message || 'AI 请求失败。'
+        });
+      }
+
+      const answer = data?.choices?.[0]?.message?.content || '';
+      return res.json({ answer });
+    } catch {
+      return res.status(502).json({ message: 'AI 服务暂时不可用。' });
+    }
   });
 
   // ----- 获取当前用户个人资料（需认证） -----
