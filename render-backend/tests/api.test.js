@@ -179,42 +179,33 @@ describe('personal site API', () => {
   it('proxies ai chat requests through the backend', async () => {
     const token = await createUserAndToken(app, 'ai-user');
     const originalFetch = global.fetch;
-    global.fetch = async () => ({
-      ok: true,
-      text: async () => JSON.stringify({ choices: [{ message: { content: '你好，世界。' } }] })
-    });
+    const originalApiKey = process.env.AI_API_KEY;
+    process.env.AI_API_KEY = 'test-key';
+    global.fetch = async (url, options) => {
+      expect(url).toBe('https://apihub.agnes-ai.com/v1/chat/completions');
+      expect(options.headers.Authorization).toBe('Bearer test-key');
+      expect(JSON.parse(options.body)).toEqual({
+        model: 'agnes-1.5-flash',
+        messages: [{ role: 'user', content: 'hello' }]
+      });
+      return {
+        ok: true,
+        text: async () => JSON.stringify({ choices: [{ message: { content: '你好，世界。' } }] })
+      };
+    };
 
     try {
       const res = await request(app)
         .post('/api/ai/chat')
         .set('Authorization', `Bearer ${token}`)
-        .send({ baseUrl: 'https://api.example.com/v1', apiKey: 'test-key', model: 'demo-model', prompt: 'hello' });
+        .send({ prompt: 'hello' });
 
       expect(res.status).toBe(200);
       expect(res.body.answer).toBe('你好，世界。');
     } finally {
       global.fetch = originalFetch;
-    }
-  });
-
-  it('proxies ai chat requests through the backend', async () => {
-    const token = await createUserAndToken(app, 'ai-user');
-    const originalFetch = global.fetch;
-    global.fetch = async (_url, options) => ({
-      ok: true,
-      text: async () => JSON.stringify({ choices: [{ message: { content: '你好，世界。' } }] })
-    });
-
-    try {
-      const res = await request(app)
-        .post('/api/ai/chat')
-        .set('Authorization', `Bearer ${token}`)
-        .send({ baseUrl: 'https://api.example.com/v1', apiKey: 'test-key', model: 'demo-model', prompt: 'hello' });
-
-      expect(res.status).toBe(200);
-      expect(res.body.answer).toBe('你好，世界。');
-    } finally {
-      global.fetch = originalFetch;
+      if (originalApiKey === undefined) delete process.env.AI_API_KEY;
+      else process.env.AI_API_KEY = originalApiKey;
     }
   });
 

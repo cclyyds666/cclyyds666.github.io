@@ -6,8 +6,8 @@ import { createToken, hashPassword, verifyPassword } from './auth.js';
 import { createDatabase } from './db/database.js';
 import { authRequired } from './middleware/authRequired.js';
 
-const DEFAULT_AI_API_BASE_URL = process.env.AI_API_BASE_URL || '';
-const DEFAULT_AI_MODEL = process.env.AI_MODEL || 'gpt-4o-mini';
+const DEFAULT_AI_API_BASE_URL = 'https://apihub.agnes-ai.com/v1';
+const DEFAULT_AI_MODEL = 'agnes-1.5-flash';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const publicDir = join(__dirname, '..', 'public');
@@ -117,24 +117,20 @@ export function createApp(options = {}) {
 
   app.get('/api/ai/config', authRequired, (_req, res) => {
     res.json({
-      enabled: Boolean(DEFAULT_AI_API_BASE_URL),
-      baseUrl: DEFAULT_AI_API_BASE_URL,
-      model: DEFAULT_AI_MODEL
+      enabled: Boolean(process.env.AI_API_KEY),
+      baseUrl: cleanBaseUrl(process.env.AI_API_BASE_URL || DEFAULT_AI_API_BASE_URL),
+      model: cleanText(process.env.AI_MODEL) || DEFAULT_AI_MODEL
     });
   });
 
   app.post('/api/ai/chat', authRequired, async (req, res) => {
-    const baseUrl = cleanBaseUrl(req.body?.baseUrl || DEFAULT_AI_API_BASE_URL);
-    const apiKey = cleanText(req.body?.apiKey);
-    const model = cleanText(req.body?.model) || DEFAULT_AI_MODEL;
+    const baseUrl = cleanBaseUrl(process.env.AI_API_BASE_URL || DEFAULT_AI_API_BASE_URL);
+    const apiKey = cleanText(process.env.AI_API_KEY);
+    const model = cleanText(process.env.AI_MODEL) || DEFAULT_AI_MODEL;
     const prompt = cleanText(req.body?.prompt);
 
-    if (!baseUrl) {
-      return res.status(400).json({ message: '请提供有效的 AI 接口地址。' });
-    }
-
     if (!apiKey) {
-      return res.status(400).json({ message: '请提供 API Key。' });
+      return res.status(500).json({ message: 'AI 服务尚未配置 API Key。' });
     }
 
     if (!prompt) {

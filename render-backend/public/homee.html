@@ -50,14 +50,12 @@
                 <div class="section-heading">
                     <p class="section-kicker">AI</p>
                     <h2>AI 智能助手</h2>
-                    <p class="status-text">填写你自己的 AI 接口地址、API Key 和模型后即可使用。</p>
+                    <p class="status-text">登录后即可使用 Agnes AI 智能问答，API Key 已由后端安全配置。</p>
                 </div>
                 <div class="ai-grid">
-                    <input type="text" id="aiBaseUrl" placeholder="AI 接口地址，例如 https://api.openai.com/v1">
-                    <input type="password" id="aiApiKey" placeholder="API Key">
-                    <input type="text" id="aiModel" placeholder="模型名称，例如 gpt-4o-mini">
                     <textarea id="aiPrompt" placeholder="想问什么？" style="min-height:140px;"></textarea>
                     <button type="button" class="button primary" onclick="handleAiChat()">发送</button>
+                    <button type="button" class="button ghost" onclick="handleAiTest()">测试你好</button>
                     <p id="aiStatus" class="status-text"></p>
                     <div id="aiAnswer" class="ai-answer"></div>
                 </div>
@@ -376,13 +374,11 @@
             } catch (err) { errorEl.textContent = err.message; }
         }
 
-        async function handleAiChat() {
-            const baseUrl = document.getElementById('aiBaseUrl').value.trim();
-            const apiKey = document.getElementById('aiApiKey').value.trim();
-            const model = document.getElementById('aiModel').value.trim();
-            const prompt = document.getElementById('aiPrompt').value.trim();
+        async function handleAiChat(promptOverride) {
+            const prompt = (promptOverride || document.getElementById('aiPrompt').value).trim();
             const status = document.getElementById('aiStatus');
             const answer = document.getElementById('aiAnswer');
+            if (!currentToken) { status.textContent = '请先登录后再使用 AI 问答。'; return; }
             if (!prompt) { status.textContent = '请输入问题'; return; }
             status.textContent = '正在请求 AI……';
             answer.textContent = '';
@@ -390,11 +386,17 @@
                 const data = await requestJson('/api/ai/chat', {
                     method: 'POST',
                     headers: { Authorization: `Bearer ${currentToken}` },
-                    body: JSON.stringify({ baseUrl, apiKey, model, prompt })
+                    body: JSON.stringify({ prompt })
                 });
                 answer.textContent = data.answer || 'AI 没有返回内容。';
                 status.textContent = '完成';
             } catch (err) { status.textContent = err.message; }
+        }
+
+        function handleAiTest() {
+            const promptEl = document.getElementById('aiPrompt');
+            promptEl.value = '你好';
+            handleAiChat('你好');
         }
 
         // ===== Posts =====
