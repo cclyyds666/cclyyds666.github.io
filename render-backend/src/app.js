@@ -6,6 +6,9 @@ import { createToken, hashPassword, verifyPassword } from './auth.js';
 import { createDatabase } from './db/database.js';
 import { authRequired } from './middleware/authRequired.js';
 
+const DEFAULT_AI_API_BASE_URL = process.env.AI_API_BASE_URL || '';
+const DEFAULT_AI_MODEL = process.env.AI_MODEL || 'gpt-4o-mini';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const publicDir = join(__dirname, '..', 'public');
 const DEFAULT_LIMIT = 20;
@@ -54,6 +57,16 @@ function messageResponse(message) {
   };
 }
 
+function cleanBaseUrl(value) {
+  const input = cleanText(value);
+  if (!input) return '';
+  try {
+    return new URL(input).toString().replace(/\/$/, '');
+  } catch {
+    return '';
+  }
+}
+
 async function ownsPost(pool, postId, userId) {
   const { rows } = await pool.query('SELECT user_id FROM posts WHERE id = $1', [postId]);
   if (rows.length === 0) return null;
@@ -99,6 +112,60 @@ export function createApp(options = {}) {
       res.json({ ok: true, service: 'personal-site-api', db: 'connected' });
     } catch (error) {
       res.status(503).json({ ok: false, service: 'personal-site-api', db: 'disconnected', error: error.message });
+    }
+  });
+
+  app.get('/api/ai/config', authRequired, (_req, res) => {
+    res.json({
+      enabled: Boolean(DEFAULT_AI_API_BASE_URL),
+      baseUrl: DEFAULT_AI_API_BASE_URL,
+      model: DEFAULT_AI_MODEL
+    });
+  });
+
+  app.post('/api/ai/chat', authRequired, async (req, res) => {
+    const baseUrl = cleanBaseUrl(req.body?.baseUrl || DEFAULT_AI_API_BASE_URL);
+    const apiKey = cleanText(req.body?.apiKey);
+    const model = cleanText(req.body?.model) || DEFAULT_AI_MODEL;
+    const prompt = cleanText(req.body?.prompt);
+
+    if (!baseUrl) {
+      return res.status(400).json({ message: '请提供有效的 AI 接口地址。' });
+    }
+
+    if (!apiKey) {
+      return res.status(400).json({ message: '请提供 API Key。' });
+    }
+
+    if (!prompt) {
+      return res.status(400).json({ message: '请输入要提问的内容。' });
+    }
+
+    try {
+      const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: prompt }]
+        })
+      });
+      const text = await response.text();
+      const data = text ? JSON.parse(text) : {};
+
+      if (!response.ok) {
+        return res.status(response.status).json({
+          message: data?.error?.message || data?.message || 'AI 请求失败。'
+        });
+      }
+
+      const answer = data?.choices?.[0]?.message?.content || '';
+      return res.json({ answer });
+    } catch {
+      return res.status(502).json({ message: 'AI 服务暂时不可用。' });
     }
   });
 

@@ -176,6 +176,48 @@ describe('personal site API', () => {
     expect(res.body).toEqual({ ok: true, service: 'personal-site-api', db: 'connected' });
   });
 
+  it('proxies ai chat requests through the backend', async () => {
+    const token = await createUserAndToken(app, 'ai-user');
+    const originalFetch = global.fetch;
+    global.fetch = async () => ({
+      ok: true,
+      text: async () => JSON.stringify({ choices: [{ message: { content: '你好，世界。' } }] })
+    });
+
+    try {
+      const res = await request(app)
+        .post('/api/ai/chat')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ baseUrl: 'https://api.example.com/v1', apiKey: 'test-key', model: 'demo-model', prompt: 'hello' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.answer).toBe('你好，世界。');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('proxies ai chat requests through the backend', async () => {
+    const token = await createUserAndToken(app, 'ai-user');
+    const originalFetch = global.fetch;
+    global.fetch = async (_url, options) => ({
+      ok: true,
+      text: async () => JSON.stringify({ choices: [{ message: { content: '你好，世界。' } }] })
+    });
+
+    try {
+      const res = await request(app)
+        .post('/api/ai/chat')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ baseUrl: 'https://api.example.com/v1', apiKey: 'test-key', model: 'demo-model', prompt: 'hello' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.answer).toBe('你好，世界。');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
   it('registers a user, logs in, and creates a post', async () => {
     const register = await request(app)
       .post('/api/register')
