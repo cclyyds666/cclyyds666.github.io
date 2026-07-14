@@ -57,3 +57,53 @@
 1. 只改 `render-backend/`，不要在根 `src/` 加功能。
 2. 大图仍走 base64 入库，库体积会涨；长期可改对象存储。
 3. Render free 会冷启动，前端需容忍首请求慢。
+4. **每次代码编辑前**，先把计划写入本文件（`docs/project-plan.md`），再动手改代码。此规则已写入 `CLAUDE.md`。
+
+---
+
+## 实施计划：访问计数 + 维护优化（2026-07-15）
+
+### 问题
+
+1. 页脚「本站累计访问」不刷新当前访问：先 `loadVisitCount()` 再 `sendBeacon`，beacon 不可 await，页面不二次拉总数。
+2. `sendBeacon(url, JSON.stringify(...))` 发成 `text/plain`，Express 解析不到 body，path 恒为 `/`。
+3. 用户栏 `innerHTML` 拼接 nickname/username/avatarUrl → XSS。
+4. DOMPurify CDN 失败时 Markdown fail-open。
+5. `requestJson` 给 GET 也带 `Content-Type: application/json`，多余 preflight。
+6. `/api/ai/daily-quote` 无速率限制，可刷 AI 额度。
+
+### 方案
+
+1. 新增共享脚本 `render-backend/public/site-visit.js`：await POST `/api/visit`（JSON）→ 再 GET count 更新 `#visitCount`。
+2. 九个页面去掉内联 visit 逻辑，改为 `<script src="site-visit.js">`。
+3. 后端：`text/plain` 兼容解析 visit body；visit/count 失败返回非 2xx；daily-quote 简易 IP 限流；`trust proxy` 便于真实 IP。
+4. `index.html` / `homee.html`：用户栏 DOM 安全构建；`renderMarkdown` 无 DOMPurify 时 textContent 回退；`requestJson` 仅有 body 时设 Content-Type。
+5. 测试：visit 写入/计数、text/plain 兼容、daily-quote 不无限调用（如可 mock）。
+
+### 涉及文件
+
+- `CLAUDE.md`
+- `docs/project-plan.md`、`render-backend/docs/project-plan.md`
+- `render-backend/public/site-visit.js`（新建）
+- `render-backend/public/*.html`（九页）
+- `render-backend/src/app.js`
+- `render-backend/tests/api.test.js`
+
+### 验证
+
+- `cd render-backend && npm test`
+- 浏览器打开页面：访问数应在记录后递增；刷新再增 1
+- 合并推送 main 触发 Pages + Render
+
+### 状态
+
+- [x] 已实现并测试
+
+### 结果摘要
+
+- 共享 `site-visit.js`：先 POST 再 GET，页脚显示当前累计
+- 后端兼容 text/plain visit body；失败返回 503
+- 用户栏 DOM 安全构建；DOMPurify 缺失 fail-closed
+- 用户名禁 `<>"'` 等；头像仅 http(s)
+- daily-quote 按 IP 限流；trust proxy 开启
+- 测试 17 项（含 visit / text-plain / unsafe username）

@@ -140,9 +140,12 @@
 
         function apiUrl(path) { return `${API_BASE_URL}${path}`; }
         async function requestJson(path, options = {}) {
-            const { headers: optHeaders, ...restOptions } = options;
-            const headers = { 'Content-Type': 'application/json', ...optHeaders };
-            const res = await fetch(apiUrl(path), { headers, ...restOptions });
+            const { headers: optHeaders, body, ...restOptions } = options;
+            const headers = { ...(optHeaders || {}) };
+            if (body !== undefined && !headers['Content-Type'] && !headers['content-type']) {
+                headers['Content-Type'] = 'application/json';
+            }
+            const res = await fetch(apiUrl(path), { headers, body, ...restOptions });
             const text = await res.text();
             let data = {};
             try { data = text ? JSON.parse(text) : {}; }
@@ -152,7 +155,9 @@
         }
 
         function renderMarkdown(markdown) {
-            const raw = marked.parse(String(markdown || ''));
+            const source = String(markdown || '');
+            if (!window.marked) return source;
+            const raw = marked.parse(source);
             if (window.DOMPurify) {
                 return DOMPurify.sanitize(raw, {
                     USE_PROFILES: { html: true },
@@ -160,7 +165,28 @@
                     ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|data:image\/(?:png|jpe?g|gif|webp|svg\+xml)):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i
                 });
             }
-            return raw;
+            const div = document.createElement('div');
+            div.textContent = source;
+            return div.innerHTML.replace(/\n/g, '<br>');
+        }
+
+        function safeAvatarUrl(url) {
+            const value = String(url || '').trim();
+            if (!value) return '';
+            try {
+                const parsed = new URL(value, window.location.origin);
+                if (parsed.protocol === 'https:' || parsed.protocol === 'http:') return parsed.href;
+            } catch { /* ignore */ }
+            return '';
+        }
+
+        function createButton(label, onClick) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn-ghost-sm';
+            btn.textContent = label;
+            btn.addEventListener('click', onClick);
+            return btn;
         }
 
         function loadImageFromFile(file) {
@@ -293,16 +319,45 @@
             const left = document.getElementById('userBarLeft');
             const right = document.getElementById('userBarRight');
             const heroPostBtn = document.getElementById('heroPostBtn');
+            left.replaceChildren();
+            right.replaceChildren();
             if (currentToken && currentUser) {
-                const avatarHtml = currentUser.avatarUrl
-                    ? '<img class="user-avatar" src="' + currentUser.avatarUrl + '" alt="头像">'
-                    : '<span class="user-avatar-placeholder">' + (currentUser.nickname || currentUser.username || '?')[0].toUpperCase() + '</span>';
-                left.innerHTML = avatarHtml + '<div class="user-info"><span class="user-name">' + (currentUser.nickname || currentUser.username) + '</span><span class="user-nickname">@' + currentUser.username + '</span></div>';
-                right.innerHTML = '<button class="btn-ghost-sm" onclick="openEditorModal()">发帖</button><button class="btn-ghost-sm" onclick="openProfileModal()">修改资料</button><button class="btn-ghost-sm" onclick="handleLogout()">退出</button>';
+                const avatarSrc = safeAvatarUrl(currentUser.avatarUrl);
+                if (avatarSrc) {
+                    const img = document.createElement('img');
+                    img.className = 'user-avatar';
+                    img.src = avatarSrc;
+                    img.alt = '头像';
+                    left.appendChild(img);
+                } else {
+                    const ph = document.createElement('span');
+                    ph.className = 'user-avatar-placeholder';
+                    ph.textContent = String(currentUser.nickname || currentUser.username || '?').charAt(0).toUpperCase();
+                    left.appendChild(ph);
+                }
+                const info = document.createElement('div');
+                info.className = 'user-info';
+                const name = document.createElement('span');
+                name.className = 'user-name';
+                name.textContent = currentUser.nickname || currentUser.username;
+                const nick = document.createElement('span');
+                nick.className = 'user-nickname';
+                nick.textContent = '@' + currentUser.username;
+                info.append(name, nick);
+                left.appendChild(info);
+                right.append(
+                    createButton('发帖', openEditorModal),
+                    createButton('修改资料', openProfileModal),
+                    createButton('退出', handleLogout)
+                );
                 if (heroPostBtn) { heroPostBtn.style.display = 'inline-flex'; heroPostBtn.onclick = openEditorModal; }
             } else {
-                left.innerHTML = '<span>欢迎访问</span>';
-                right.innerHTML = '<button class="btn-ghost-sm" id="authBtn" onclick="openAuthModal()">登录 / 注册</button>';
+                const guest = document.createElement('span');
+                guest.textContent = '欢迎访问';
+                left.appendChild(guest);
+                const authBtn = createButton('登录 / 注册', openAuthModal);
+                authBtn.id = 'authBtn';
+                right.appendChild(authBtn);
                 if (heroPostBtn) { heroPostBtn.style.display = 'none'; heroPostBtn.onclick = null; }
             }
         }
@@ -421,31 +476,14 @@
             }
         }
 
-        // ===== 访问统计 =====
-        async function loadVisitCount() {
-            try {
-                const data = await requestJson('/api/visits/count');
-                document.getElementById('visitCount').textContent = data.total;
-            } catch { /* ignore */ }
-        }
-        function recordVisit() {
-            const path = window.location.pathname;
-            if (navigator.sendBeacon) {
-                navigator.sendBeacon(apiUrl('/api/visit'), JSON.stringify({ path }));
-            } else {
-                fetch(apiUrl('/api/visit'), { method: 'POST', body: JSON.stringify({ path }), headers: { 'Content-Type': 'application/json' } }).catch(() => {});
-            }
-        }
-
         (async function init() {
             if (currentToken) await fetchCurrentUser();
             updateUserBar();
             loadPosts();
-            loadVisitCount();
-            recordVisit();
             document.getElementById('authModal').addEventListener('click', function(e) { if (e.target === this) closeAuthModal(); });
             document.getElementById('editorModal').addEventListener('click', function(e) { if (e.target === this) closeEditorModal(); });
         })();
     </script>
+    <script src="site-visit.js"></script>
 </body>
 </html>

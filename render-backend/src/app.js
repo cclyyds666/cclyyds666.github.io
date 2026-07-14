@@ -193,6 +193,7 @@ export function createApp(options = {}) {
   const app = express();
 
   app.locals.db = db;
+  app.set('trust proxy', 1);
 
   app.use((req, res, next) => {
     const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
@@ -213,7 +214,19 @@ export function createApp(options = {}) {
     return next();
   });
 
+  // Compat: older sendBeacon string bodies arrive as text/plain JSON
+  app.use(express.text({ type: ['text/plain', 'text/*'], limit: '32kb' }));
   app.use(express.json({ limit: '6mb' }));
+  app.use((req, _res, next) => {
+    if (typeof req.body === 'string' && req.body.trim()) {
+      try {
+        req.body = JSON.parse(req.body);
+      } catch {
+        /* leave as string */
+      }
+    }
+    return next();
+  });
   app.use(express.static(publicDir));
 
   app.get('/', (req, res) => {
@@ -256,13 +269,14 @@ export function createApp(options = {}) {
     }
   });
 
-  app.get('/api/ai/daily-quote', async (_req, res) => {
+  app.get('/api/ai/daily-quote', async (req, res) => {
     const today = new Date().toISOString().slice(0, 10);
     if (dailyQuoteCache.date === today && dailyQuoteCache.quote) {
       return res.json({ quote: dailyQuoteCache.quote, date: today, cached: true });
     }
 
     try {
+      enforceAiRateLimit(`quote:${req.ip || 'unknown'}`);
       const quote = await requestAiCompletion([
         {
           role: 'user',
@@ -271,7 +285,10 @@ export function createApp(options = {}) {
       ]);
       dailyQuoteCache = { date: today, quote: quote || FALLBACK_DAILY_QUOTE };
       return res.json({ quote: dailyQuoteCache.quote, date: today, cached: false });
-    } catch {
+    } catch (error) {
+      if (error?.status === 429) {
+        return res.json({ quote: FALLBACK_DAILY_QUOTE, date: today, cached: false });
+      }
       return res.json({ quote: FALLBACK_DAILY_QUOTE, date: today, cached: false });
     }
   });
@@ -283,9 +300,9 @@ export function createApp(options = {}) {
     const hash = crypto.createHash('sha256').update(ip).digest('hex').slice(0, 8);
     try {
       await pool.query('INSERT INTO visits (ip_hash, path) VALUES ($1, $2)', [hash, path]);
-      res.json({ ok: true });
+      return res.json({ ok: true });
     } catch {
-      res.status(200).json({ ok: false });
+      return res.status(503).json({ ok: false, message: '访问统计暂时不可用。' });
     }
   });
 
@@ -293,9 +310,9 @@ export function createApp(options = {}) {
   app.get('/api/visits/count', async (_req, res) => {
     try {
       const { rows } = await pool.query('SELECT COUNT(*)::int AS count FROM visits');
-      res.json({ total: rows[0].count });
+      return res.json({ total: rows[0].count });
     } catch {
-      res.json({ total: 0 });
+      return res.status(503).json({ message: '访问统计暂时不可用。' });
     }
   });
 
@@ -304,8 +321,8 @@ export function createApp(options = {}) {
     const username = cleanText(req.body?.username);
     const password = cleanText(req.body?.password);
 
-    if (username.length < 3 || username.length > 24) {
-      return res.status(400).json({ message: '用户名长度需要在 3 到 24 个字符之间。' });
+    if (username.length < 3 || username.length > 24 || /[<>"'`\\/]/.test(username)) {
+      return res.status(400).json({ message: '用户名长度需要在 3 到 24 个字符之间，且不能包含特殊符号。' });
     }
 
     if (password.length < 6 || password.length > 128) {
@@ -368,8 +385,20 @@ export function createApp(options = {}) {
     if (nickname !== undefined && (typeof nickname !== 'string' || nickname.length < 1 || nickname.length > 24)) {
       return res.status(400).json({ message: '昵称长度需要在 1 到 24 个字符之间。' });
     }
-    if (avatarUrl !== undefined && (typeof avatarUrl !== 'string' || avatarUrl.length > 512)) {
-      return res.status(400).json({ message: '头像 URL 长度不能超过 512 个字符。' });
+    if (avatarUrl !== undefined) {
+      if (typeof avatarUrl !== 'string' || avatarUrl.length > 512) {
+        return res.status(400).json({ message: '头像 URL 长度不能超过 512 个字符。' });
+      }
+      if (avatarUrl) {
+        try {
+          const parsed = new URL(avatarUrl);
+          if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+            return res.status(400).json({ message: '头像 URL 仅支持 http/https。' });
+          }
+        } catch {
+          return res.status(400).json({ message: '头像 URL 格式不正确。' });
+        }
+      }
     }
 
     const setClauses = [];

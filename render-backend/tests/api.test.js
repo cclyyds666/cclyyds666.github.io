@@ -20,6 +20,7 @@ function createTestDb() {
   });
 
   return {
+    state,
     pool: {
       async query(sql, params = []) {
         const text = sql.replace(/\s+/g, ' ').trim().toLowerCase();
@@ -402,6 +403,47 @@ describe('personal site API', () => {
     expect(created.body.content.length).toBeGreaterThan(600_000);
   });
 
+  it('records visits and returns an updated total', async () => {
+    const empty = await request(app).get('/api/visits/count');
+    expect(empty.status).toBe(200);
+    expect(empty.body.total).toBe(0);
+
+    const created = await request(app)
+      .post('/api/visit')
+      .send({ path: '/love.html' });
+    expect(created.status).toBe(200);
+    expect(created.body.ok).toBe(true);
+    expect(db.state.visits[0].path).toBe('/love.html');
+
+    const counted = await request(app).get('/api/visits/count');
+    expect(counted.status).toBe(200);
+    expect(counted.body.total).toBe(1);
+  });
+
+  it('accepts text/plain visit payloads for legacy beacons', async () => {
+    const created = await request(app)
+      .post('/api/visit')
+      .set('Content-Type', 'text/plain;charset=UTF-8')
+      .send(JSON.stringify({ path: '/memory.html' }));
+
+    expect(created.status).toBe(200);
+    expect(db.state.visits[0].path).toBe('/memory.html');
+  });
+
+  it('rejects unsafe usernames and avatar URLs', async () => {
+    const badUser = await request(app)
+      .post('/api/register')
+      .send({ username: 'ab<img>', password: 'secret123' });
+    expect(badUser.status).toBe(400);
+
+    const token = await createUserAndToken(app, 'safe_user');
+    const badAvatar = await request(app)
+      .patch('/api/user/profile')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ avatarUrl: 'javascript:alert(1)' });
+    expect(badAvatar.status).toBe(400);
+  });
+
   it('rejects overlong AI prompts', async () => {
     const token = await createUserAndToken(app, 'prompt-user');
     const res = await request(app)
@@ -414,13 +456,19 @@ describe('personal site API', () => {
 
   it('does not expose AI baseUrl in config', async () => {
     const token = await createUserAndToken(app, 'cfg-user');
+    const originalApiKey = process.env.AI_API_KEY;
     process.env.AI_API_KEY = 'test-key';
-    const res = await request(app)
-      .get('/api/ai/config')
-      .set('Authorization', `Bearer ${token}`);
+    try {
+      const res = await request(app)
+        .get('/api/ai/config')
+        .set('Authorization', `Bearer ${token}`);
 
-    expect(res.status).toBe(200);
-    expect(res.body.enabled).toBe(true);
-    expect(res.body.baseUrl).toBeUndefined();
+      expect(res.status).toBe(200);
+      expect(res.body.enabled).toBe(true);
+      expect(res.body.baseUrl).toBeUndefined();
+    } finally {
+      if (originalApiKey === undefined) delete process.env.AI_API_KEY;
+      else process.env.AI_API_KEY = originalApiKey;
+    }
   });
 });
