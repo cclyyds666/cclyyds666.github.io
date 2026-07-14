@@ -1,7 +1,7 @@
 {
   "name": "cclyyds666-personal-site",
   "version": "1.0.0",
-  "description": "Personal website with an Express API and SQLite persistence.",
+  "description": "Personal website with Express API and PostgreSQL (Neon).",
   "type": "module",
   "main": "src/server.js",
   "scripts": {

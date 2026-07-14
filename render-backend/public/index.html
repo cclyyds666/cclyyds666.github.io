@@ -88,13 +88,14 @@
             <button class="close-modal" onclick="closeEditorModal()">✕</button>
             <h2>发布新帖子</h2>
             <input type="text" id="postTitle" placeholder="标题">
-            <textarea id="postContent" placeholder="内容（支持 Markdown，图片会自动转 base64 嵌入）" style="min-height:180px;"></textarea>
+            <textarea id="postContent" placeholder="内容（支持 Markdown；图片会自动压缩后嵌入）" style="min-height:180px;"></textarea>
             <input type="file" id="postImages" accept="image/*" multiple style="display:none;">
             <div style="display:flex;gap:8px;margin-top:8px;">
                 <button type="button" class="button ghost" onclick="document.getElementById('postImages').click()" style="flex:1;">📷 添加图片</button>
                 <button type="button" class="button primary" onclick="handleCreatePost()" style="flex:1;">发布</button>
             </div>
             <div class="image-preview-grid" id="imagePreviewGrid"></div>
+            <p class="status-text" style="margin-top:8px;">最多 5 张，单张原图 ≤ 8MB，上传时自动压缩。过大时会提示减少图片。</p>
             <p id="editorError" class="status-text" style="margin-top:10px;color:var(--rose);"></p>
         </div>
     </div>
@@ -125,8 +126,14 @@
     <button class="music-player-toggle" id="musicToggle" onclick="toggleMusicPlayer()" aria-label="打开音乐播放器">音乐</button>
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
     <script>
         const API_BASE_URL = window.SITE_API_BASE_URL || 'https://cclyyds666-personal-site-h8kk.onrender.com';
+        const MAX_IMAGES = 5;
+        const MAX_SOURCE_IMAGE_BYTES = 8 * 1024 * 1024;
+        const MAX_IMAGE_EDGE = 1280;
+        const IMAGE_JPEG_QUALITY = 0.72;
+        const MAX_POST_CONTENT_LENGTH = 2000000;
         let currentToken = localStorage.getItem('token');
         let currentUser = null;
         let pendingImages = [];
@@ -137,9 +144,80 @@
             const headers = { 'Content-Type': 'application/json', ...optHeaders };
             const res = await fetch(apiUrl(path), { headers, ...restOptions });
             const text = await res.text();
-            const data = text ? JSON.parse(text) : {};
+            let data = {};
+            try { data = text ? JSON.parse(text) : {}; }
+            catch { throw new Error(res.ok ? '响应格式错误' : '服务暂时不可用'); }
             if (!res.ok) throw new Error(data.message || '请求失败');
             return data;
+        }
+
+        function renderMarkdown(markdown) {
+            const raw = marked.parse(String(markdown || ''));
+            if (window.DOMPurify) {
+                return DOMPurify.sanitize(raw, {
+                    USE_PROFILES: { html: true },
+                    ADD_DATA_URI_TAGS: ['img'],
+                    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|data:image\/(?:png|jpe?g|gif|webp|svg\+xml)):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i
+                });
+            }
+            return raw;
+        }
+
+        function loadImageFromFile(file) {
+            return new Promise((resolve, reject) => {
+                const url = URL.createObjectURL(file);
+                const img = new Image();
+                img.onload = () => {
+                    URL.revokeObjectURL(url);
+                    resolve(img);
+                };
+                img.onerror = () => {
+                    URL.revokeObjectURL(url);
+                    reject(new Error('图片读取失败'));
+                };
+                img.src = url;
+            });
+        }
+
+        async function compressImageFile(file) {
+            const img = await loadImageFromFile(file);
+            let { width, height } = img;
+            const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(width, height));
+            width = Math.max(1, Math.round(width * scale));
+            height = Math.max(1, Math.round(height * scale));
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            let quality = IMAGE_JPEG_QUALITY;
+            let dataUrl = canvas.toDataURL('image/jpeg', quality);
+            while (dataUrl.length > 600_000 && quality > 0.45) {
+                quality -= 0.08;
+                dataUrl = canvas.toDataURL('image/jpeg', quality);
+            }
+            return dataUrl;
+        }
+
+        function renderImagePreviews() {
+            const grid = document.getElementById('imagePreviewGrid');
+            grid.replaceChildren();
+            pendingImages.forEach((base64, idx) => {
+                const item = document.createElement('div');
+                item.className = 'image-preview-item';
+                const img = document.createElement('img');
+                img.src = base64;
+                img.alt = '预览图 ' + (idx + 1);
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'remove-img';
+                btn.textContent = '×';
+                btn.addEventListener('click', () => removeImage(idx));
+                item.append(img, btn);
+                grid.appendChild(item);
+            });
         }
 
         // ===== 暗色模式 =====
@@ -177,31 +255,37 @@
         }
 
         // ===== 图片上传 =====
-        document.getElementById('postImages')?.addEventListener('change', function(e) {
-            const files = Array.from(e.target.files);
-            files.forEach(file => {
-                if (pendingImages.length >= 5) return;
-                if (file.size > 5 * 1024 * 1024) { alert('图片不能超过 5MB'); return; }
-                const reader = new FileReader();
-                reader.onload = function(ev) {
-                    const base64 = ev.target.result;
-                    const idx = pendingImages.length;
+        document.getElementById('postImages')?.addEventListener('change', async function(e) {
+            const files = Array.from(e.target.files || []);
+            const errorEl = document.getElementById('editorError');
+            for (const file of files) {
+                if (pendingImages.length >= MAX_IMAGES) {
+                    errorEl.textContent = '最多只能添加 5 张图片。';
+                    break;
+                }
+                if (!file.type.startsWith('image/')) {
+                    errorEl.textContent = '只能上传图片文件。';
+                    continue;
+                }
+                if (file.size > MAX_SOURCE_IMAGE_BYTES) {
+                    errorEl.textContent = '单张原图不能超过 8MB。';
+                    continue;
+                }
+                try {
+                    errorEl.textContent = '正在压缩图片……';
+                    const base64 = await compressImageFile(file);
                     pendingImages.push(base64);
-                    const grid = document.getElementById('imagePreviewGrid');
-                    const item = document.createElement('div');
-                    item.className = 'image-preview-item';
-                    item.innerHTML = '<img src="' + base64 + '">' +
-                        '<button class="remove-img" onclick="removeImage(' + idx + ')">×</button>';
-                    grid.appendChild(item);
-                };
-                reader.readAsDataURL(file);
-            });
+                    renderImagePreviews();
+                    errorEl.textContent = '';
+                } catch {
+                    errorEl.textContent = '图片处理失败，请换一张再试。';
+                }
+            }
             this.value = '';
         });
         function removeImage(idx) {
             pendingImages.splice(idx, 1);
-            const grid = document.getElementById('imagePreviewGrid');
-            if (grid.children[idx]) grid.removeChild(grid.children[idx]);
+            renderImagePreviews();
         }
 
         // ===== 用户栏 =====
@@ -284,19 +368,25 @@
                 closeProfileModal();
             } catch (err) { errorEl.textContent = err.message; }
         }
-        function openEditorModal() { document.getElementById('editorModal').classList.remove('hidden'); pendingImages = []; document.getElementById('imagePreviewGrid').innerHTML = ''; }
+        function openEditorModal() { document.getElementById('editorModal').classList.remove('hidden'); pendingImages = []; renderImagePreviews(); }
         function closeEditorModal() { document.getElementById('editorModal').classList.add('hidden'); document.getElementById('editorError').textContent = ''; }
         async function handleCreatePost() {
             const title = document.getElementById('postTitle').value.trim();
             let content = document.getElementById('postContent').value;
             const errorEl = document.getElementById('editorError');
             if (!title || !content.trim()) { errorEl.textContent = '标题和内容不能为空'; return; }
-            // 追加 base64 图片
             pendingImages.forEach((img, i) => { content += '\n\n![image' + i + '](' + img + ')'; });
+            if (content.length > MAX_POST_CONTENT_LENGTH) {
+                errorEl.textContent = '内容过长。请减少图片数量或换更小的图后再试。';
+                return;
+            }
             try {
+                errorEl.textContent = '正在发布……';
                 await requestJson('/api/posts', { method: 'POST', headers: { Authorization: `Bearer ${currentToken}` }, body: JSON.stringify({ title, content }) });
                 document.getElementById('postTitle').value = '';
                 document.getElementById('postContent').value = '';
+                pendingImages = [];
+                renderImagePreviews();
                 closeEditorModal();
                 loadPosts();
             } catch (err) { errorEl.textContent = err.message; }
@@ -310,7 +400,7 @@
             content.className = 'post-body';
             content.style.whiteSpace = 'pre-wrap';
             content.style.margin = '8px 0';
-            content.innerHTML = marked.parse(post.content);
+            content.innerHTML = renderMarkdown(post.content);
             const meta = document.createElement('small');
             meta.textContent = '作者：' + post.author + ' | ' + new Date(post.createdAt).toLocaleString();
             article.append(title, content, meta);

@@ -1,23 +1,15 @@
 {
   "name": "cclyyds666-personal-site",
   "version": "1.0.0",
-  "description": "Personal website with an Express API and SQLite persistence.",
-  "type": "module",
-  "main": "src/server.js",
+  "description": "Personal website monorepo entry. Primary runtime lives in render-backend/ (Express + PostgreSQL).",
+  "private": true,
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
-    "test": "vitest run"
+    "start": "npm --prefix render-backend start",
+    "dev": "npm --prefix render-backend run dev",
+    "test": "npm --prefix render-backend test",
+    "install:backend": "npm --prefix render-backend ci"
   },
   "engines": {
     "node": ">=24.0.0 <25.0.0"
-  },
-  "dependencies": {
-    "express": "^5.1.0",
-    "pg": "^8.22.0"
-  },
-  "devDependencies": {
-    "supertest": "^7.1.4",
-    "vitest": "^4.0.13"
   }
 }
