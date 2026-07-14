@@ -13,10 +13,14 @@ const MAX_POST_TITLE_LENGTH = 80;
 // base64 图片会显著膨胀：5 张压缩图约 1–1.5MB 文本，留足余量
 const MAX_POST_CONTENT_LENGTH = 2_000_000;
 const MAX_AI_PROMPT_LENGTH = Number.parseInt(process.env.AI_PROMPT_MAX_CHARS || '4000', 10) || 4000;
+const MAX_LIST_CONTENT_CHARS = 800;
 const AI_RATE_WINDOW_MS = 60_000;
 const AI_RATE_MAX_REQUESTS = 20;
+const WRITE_RATE_WINDOW_MS = 60_000;
+const WRITE_RATE_MAX_REQUESTS = 30;
 let dailyQuoteCache = { date: '', quote: '' };
 const aiRateBuckets = new Map();
+const writeRateBuckets = new Map();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const publicDir = join(__dirname, '..', 'public');
@@ -46,14 +50,27 @@ function parsePagination(query) {
   return { limit, offset };
 }
 
-function postResponse(post) {
+function postResponse(post, { summarize = false } = {}) {
+  let content = post.content || '';
+  let truncated = false;
+
+  if (summarize) {
+    // Strip embedded base64 images from list payloads to keep homepage fast.
+    content = content.replace(/!\[[^\]]*]\(data:image\/[a-zA-Z0-9.+-]+;base64,[^)]+\)/g, '[图片]');
+    if (content.length > MAX_LIST_CONTENT_CHARS) {
+      content = `${content.slice(0, MAX_LIST_CONTENT_CHARS)}…`;
+      truncated = true;
+    }
+  }
+
   return {
     id: post.id,
     title: post.title,
-    content: post.content,
+    content,
     author: post.author,
     createdAt: post.created_at,
-    updatedAt: post.updated_at
+    updatedAt: post.updated_at,
+    truncated: summarize ? truncated || /\[图片]/.test(content) : false
   };
 }
 
@@ -92,23 +109,42 @@ function currentChinaTimeContext() {
   return `当前中国标准时间（UTC+8，Asia/Shanghai）是：${formatter.format(now)}。如果用户询问当前时间、日期或星期，请以这个时间为准。你不能实时联网查询天气；如果用户询问天气，请说明需要接入天气接口才能获取实时天气。`;
 }
 
-function enforceAiRateLimit(userId) {
-  const key = String(userId || 'anonymous');
+function enforceRateLimit(buckets, key, windowMs, maxRequests) {
+  const bucketKey = String(key || 'anonymous');
   const now = Date.now();
-  const bucket = aiRateBuckets.get(key) || { count: 0, resetAt: now + AI_RATE_WINDOW_MS };
+  const bucket = buckets.get(bucketKey) || { count: 0, resetAt: now + windowMs };
 
   if (now >= bucket.resetAt) {
     bucket.count = 0;
-    bucket.resetAt = now + AI_RATE_WINDOW_MS;
+    bucket.resetAt = now + windowMs;
   }
 
   bucket.count += 1;
-  aiRateBuckets.set(key, bucket);
+  buckets.set(bucketKey, bucket);
 
-  if (bucket.count > AI_RATE_MAX_REQUESTS) {
+  if (bucket.count > maxRequests) {
     const error = new Error('请求过于频繁，请稍后再试。');
     error.status = 429;
     throw error;
+  }
+}
+
+function enforceAiRateLimit(userId) {
+  enforceRateLimit(aiRateBuckets, userId, AI_RATE_WINDOW_MS, AI_RATE_MAX_REQUESTS);
+}
+
+function enforceWriteRateLimit(req, action) {
+  const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+  enforceRateLimit(writeRateBuckets, `${action}:${ip}`, WRITE_RATE_WINDOW_MS, WRITE_RATE_MAX_REQUESTS);
+}
+
+function rateLimitOrReject(req, res, action) {
+  try {
+    enforceWriteRateLimit(req, action);
+    return true;
+  } catch (error) {
+    res.status(429).json({ message: error.message || '请求过于频繁，请稍后再试。' });
+    return false;
   }
 }
 
@@ -318,6 +354,7 @@ export function createApp(options = {}) {
 
   // ----- 用户注册 -----
   app.post('/api/register', async (req, res) => {
+    if (!rateLimitOrReject(req, res, 'register')) return;
     const username = cleanText(req.body?.username);
     const password = cleanText(req.body?.password);
 
@@ -350,6 +387,7 @@ export function createApp(options = {}) {
 
   // ----- 用户登录 -----
   app.post('/api/login', async (req, res) => {
+    if (!rateLimitOrReject(req, res, 'login')) return;
     const username = cleanText(req.body?.username);
     const password = cleanText(req.body?.password);
 
@@ -458,7 +496,7 @@ export function createApp(options = {}) {
     ]);
 
     res.json({
-      items: postsResult.rows.map(postResponse),
+      items: postsResult.rows.map((row) => postResponse(row, { summarize: true })),
       total: totalResult.rows[0].count,
       limit,
       offset
@@ -482,6 +520,7 @@ export function createApp(options = {}) {
 
   // ----- 创建帖子 -----
   app.post('/api/posts', authRequired, async (req, res) => {
+    if (!rateLimitOrReject(req, res, 'create-post')) return;
     const title = cleanText(req.body?.title);
     const content = cleanText(req.body?.content);
 
@@ -577,6 +616,7 @@ export function createApp(options = {}) {
 
   // ----- 创建留言（无需登录） -----
   app.post('/api/messages', async (req, res) => {
+    if (!rateLimitOrReject(req, res, 'create-message')) return;
     const name = cleanText(req.body?.name) || '匿名朋友';
     const content = cleanText(req.body?.content);
     const website = cleanText(req.body?.website);

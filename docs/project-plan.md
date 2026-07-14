@@ -107,3 +107,57 @@
 - 用户名禁 `<>"'` 等；头像仅 http(s)
 - daily-quote 按 IP 限流；trust proxy 开启
 - 测试 17 项（含 visit / text-plain / unsafe username）
+
+---
+
+## 实施计划：保活 + 列表瘦身 + 限流 + 前端合并 + SRI（2026-07-15）
+
+### 问题 / 目标
+
+1. Render Free 会休眠，首请求慢 → GitHub Actions 定时 ping `/api/health`。
+2. 帖子列表返回完整 base64 正文 → 首页过慢。
+3. 注册/登录/留言/发帖无限流 → 易被刷。
+4. `index.html` 与 `homee.html` 双份 SPA 逻辑漂移。
+5. marked/DOMPurify CDN 无 SRI。
+
+### 方案
+
+1. 新增 `.github/workflows/keep-render-awake.yml`：每 12 分钟 curl health，允许 `workflow_dispatch`。
+2. `GET /api/posts` 列表项去掉 `data:image/...` 大图或截断正文；`GET /api/posts/:id` 仍返回全文。前端列表若需全文可点开详情，或继续用列表但渲染摘要。
+3. 复用现有 `enforceAiRateLimit` 思路，通用 IP 限流：register/login/messages/posts。
+4. 抽 `render-backend/public/site-app.js` 承载共用 API/用户栏/发帖逻辑；`index.html` 与 `homee.html` 只保留页面结构差异（AI 区块仅 homee）。
+5. CDN script 加 `integrity` + `crossorigin="anonymous"`（用已知版本哈希）；`target=_blank` 加 `rel="noopener noreferrer"`。
+6. **前端冷启动提示**：共享脚本轮询 `/api/health`；未就绪时页脚/状态区显示「后端唤醒中…」，就绪后自动恢复并刷新帖子/访问数。
+
+### 涉及文件
+
+- `docs/project-plan.md`、`render-backend/docs/project-plan.md`
+- `.github/workflows/keep-render-awake.yml`
+- `render-backend/src/app.js`
+- `render-backend/tests/api.test.js`
+- `render-backend/public/site-app.js`（新建）
+- `render-backend/public/site-visit.js`（冷启动提示）
+- `render-backend/public/index.html`、`homee.html`
+- 可能小改 `board.html` 等
+
+### 验证
+
+- `cd render-backend && npm test`
+- 列表接口响应明显小于带图全文
+- 限流触发返回 429
+- 合并推送 main 后 Actions 出现 keep-awake workflow
+- 冷启动时页脚显示唤醒提示，恢复后数字刷新
+
+### 状态
+
+- [x] 已实现并测试
+
+### 结果摘要
+
+- GitHub Actions `keep-render-awake.yml` 每 12 分钟 ping `/api/health`
+- 帖子列表剥离 base64 图并截断正文；详情仍返回全文
+- 注册/登录/留言/发帖 IP 限流（60s/30 次）
+- 共用 `site-app.js`；index/homee 仅结构差异（AI 仅 homee）
+- marked@15.0.12 + DOMPurify@3.2.6 加 SRI；Gravatar 加 rel=noopener
+- 前端冷启动：轮询 health，页脚 `#backendStatus` 提示唤醒中
+- 测试 18 项通过

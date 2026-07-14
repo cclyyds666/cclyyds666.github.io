@@ -168,7 +168,8 @@ describe('personal site API', () => {
 
     expect(res.status).toBe(200);
     expect(res.text).toContain('id="postSection"');
-    expect(res.text).toContain('loadPosts');
+    expect(res.text).toContain('site-app.js');
+    expect(res.text).toContain('initSiteApp');
   });
 
   it('returns health status', async () => {
@@ -442,6 +443,32 @@ describe('personal site API', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ avatarUrl: 'javascript:alert(1)' });
     expect(badAvatar.status).toBe(400);
+  });
+
+
+  it('summarizes list post content and strips embedded images', async () => {
+    const token = await createUserAndToken(app, 'list-user');
+    const content = `正文开头
+
+![photo](data:image/jpeg;base64,${'B'.repeat(5000)})
+
+结尾`;
+    const created = await request(app)
+      .post('/api/posts')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: '列表瘦身', content });
+    expect(created.status).toBe(201);
+
+    const list = await request(app).get('/api/posts');
+    expect(list.status).toBe(200);
+    expect(list.body.items[0].content).toContain('[图片]');
+    expect(list.body.items[0].content).not.toContain('base64,');
+    expect(list.body.items[0].truncated).toBe(true);
+
+    const detail = await request(app).get(`/api/posts/${created.body.id}`);
+    expect(detail.status).toBe(200);
+    expect(detail.body.content).toContain('base64,');
+    expect(detail.body.truncated).toBe(false);
   });
 
   it('rejects overlong AI prompts', async () => {
