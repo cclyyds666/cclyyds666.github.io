@@ -13,7 +13,7 @@
             <nav class="site-nav" aria-label="主导航">
                 <a class="brand" href="index.html">陈同学的秘密花园</a>
                 <ul>
-                    <li><a href="homee.html">主页</a></li>
+                    <li><a href="index.html">主页</a></li>
                     <li><a href="self.html">关于我</a></li>
                     <li><a href="view.html">诗与远方</a></li>
                     <li><a href="zzu.html">我与 ZZU</a></li>
@@ -44,6 +44,26 @@
                     <button class="btn-ghost-sm" id="authBtn" onclick="openAuthModal()">登录 / 注册</button>
                 </div>
             </div>
+
+            <section class="panel" id="aiSection">
+                <div class="section-heading">
+                    <p class="section-kicker">AI</p>
+                    <h2>AI 智能助手</h2>
+                    <p class="status-text">登录后即可使用 Agnes AI 智能问答，API Key 已由后端安全配置。</p>
+                </div>
+                <div class="daily-quote-card">
+                    <p class="section-kicker">Daily Quote</p>
+                    <blockquote id="dailyQuoteText">正在生成今日 AI 签……</blockquote>
+                    <p class="status-text" id="dailyQuoteMeta">每天自动刷新一次</p>
+                </div>
+                <div class="ai-grid">
+                    <textarea id="aiPrompt" placeholder="想问什么？" style="min-height:140px;"></textarea>
+                    <button type="button" class="button primary" onclick="handleAiChat()">发送</button>
+                    <button type="button" class="button ghost" onclick="handleAiTest()">测试你好</button>
+                    <p id="aiStatus" class="status-text"></p>
+                    <div id="aiAnswer" class="ai-answer"></div>
+                </div>
+            </section>
 
             <section class="panel" id="postSection">
                 <div class="section-heading">
@@ -129,6 +149,6 @@
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js" integrity="sha384-JEyTNhjM6R1ElGoJns4U2Ln4ofPcqzSsynQkmEc/KGy6336qAZl70tDLufbkla+3" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="site-app.js"></script>
     <script src="site-visit.js"></script>
-    <script>initSiteApp({ enableAi: false });</script>
+    <script>initSiteApp({ enableAi: true });</script>
 </body>
 </html>

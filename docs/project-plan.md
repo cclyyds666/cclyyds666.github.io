@@ -161,3 +161,51 @@
 - marked@15.0.12 + DOMPurify@3.2.6 加 SRI；Gravatar 加 rel=noopener
 - 前端冷启动：轮询 health，页脚 `#backendStatus` 提示唤醒中
 - 测试 18 项通过
+
+---
+
+## 实施计划：主页真正统一 + 列表可展开看图（2026-07-15）
+
+### 澄清
+
+上一轮“合并 index/homee”指的是 **共用 `site-app.js` 逻辑**，不是删掉其中一个页面。  
+所以两个 HTML 内容仍不同（homee 有 AI，index 没有），容易误解。
+
+### 问题
+
+1. 用户期望“一个主页”，不是两套入口。
+2. 列表为提速去掉 base64 图后，前端没有“展开全文”，看起来像照片丢了；照片仍在数据库/`GET /api/posts/:id`，但网页看不了。
+
+### 方案
+
+1. **主页统一到 `index.html`**：把 AI 区块放进 index；`homee.html` 改为跳转 `index.html`；全站导航“主页”指向 `index.html`。
+2. **列表展开全文**：摘要帖显示「展开全文 / 查看图片」；点击后请求 `GET /api/posts/:id`，用完整 Markdown（含图）替换该条。
+3. 摘要仍剥离大图以保速度；详情/展开才加载图片。
+
+### 涉及文件
+
+- `docs/project-plan.md`
+- `render-backend/public/site-app.js`
+- `render-backend/public/index.html`
+- `render-backend/public/homee.html`
+- 各页导航中的 `homee.html` 链接（可选批量改）
+- `render-backend/tests/api.test.js`（如需）
+
+### 验证
+
+- 打开 `/` 有 AI + 帖子列表
+- `homee.html` 跳到 index
+- 带图帖列表显示摘要；点展开后图片可见
+- `npm test`
+
+### 状态
+
+- [x] 已实现并测试
+
+### 结果摘要
+
+- `index.html` 成为唯一主页（含 AI + 帖子）
+- `homee.html` 改为跳转 index，避免双主页
+- 全站导航“主页”指向 index
+- 列表摘要仍不带大图；点击「展开全文 / 查看图片」请求 `/api/posts/:id` 显示完整图文
+- 测试 18 项通过

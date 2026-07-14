@@ -506,25 +506,54 @@
     handleAiChat('你好');
   }
 
+  function renderPostBody(container, post, { full = false } = {}) {
+    container.replaceChildren();
+    const body = document.createElement('div');
+    body.className = 'post-body';
+    body.style.whiteSpace = 'pre-wrap';
+    body.style.margin = '8px 0';
+    body.innerHTML = renderMarkdown(post.content);
+    container.appendChild(body);
+
+    if (!full && post.truncated) {
+      const note = document.createElement('p');
+      note.className = 'status-text';
+      note.textContent = '列表为摘要（大图已省略以加快加载）。';
+      container.appendChild(note);
+
+      const expandBtn = document.createElement('button');
+      expandBtn.type = 'button';
+      expandBtn.className = 'button ghost';
+      expandBtn.style.marginTop = '8px';
+      expandBtn.textContent = '展开全文 / 查看图片';
+      expandBtn.addEventListener('click', async () => {
+        expandBtn.disabled = true;
+        expandBtn.textContent = '正在加载全文……';
+        try {
+          await waitForBackend();
+          const fullPost = await requestJson(`/api/posts/${post.id}`);
+          renderPostBody(container, fullPost, { full: true });
+        } catch (err) {
+          expandBtn.disabled = false;
+          expandBtn.textContent = '展开失败，点击重试';
+          note.textContent = err.message || '加载全文失败';
+        }
+      });
+      container.appendChild(expandBtn);
+    }
+  }
+
   function createPostElement(post) {
     const article = document.createElement('article');
     article.className = 'post';
+    article.dataset.postId = String(post.id);
     const title = document.createElement('h4');
     title.textContent = post.title;
-    const content = document.createElement('div');
-    content.className = 'post-body';
-    content.style.whiteSpace = 'pre-wrap';
-    content.style.margin = '8px 0';
-    content.innerHTML = renderMarkdown(post.content);
-    if (post.truncated) {
-      const note = document.createElement('p');
-      note.className = 'status-text';
-      note.textContent = '列表为摘要显示（大图已省略）。完整内容已保存在服务器。';
-      content.appendChild(note);
-    }
+    const bodyWrap = document.createElement('div');
+    renderPostBody(bodyWrap, post, { full: !post.truncated });
     const meta = document.createElement('small');
     meta.textContent = '作者：' + post.author + ' | ' + new Date(post.createdAt).toLocaleString();
-    article.append(title, content, meta);
+    article.append(title, bodyWrap, meta);
     return article;
   }
 
