@@ -2,6 +2,10 @@ node_modules/
 data/*.sqlite
 data/*.sqlite-*
 .env
+.env.*
+env/
+*.env
+!.env.example
 .DS_Store
 npm-debug.log*
 .claude/

@@ -360,19 +360,67 @@ describe('personal site API', () => {
     expect(bot.status).toBe(400);
   });
 
-  it('lets logged-in users delete messages', async () => {
-    const token = await createUserAndToken(app);
-    const created = await request(app)
-      .post('/api/messages')
-      .send({ name: '访客', content: '请删除我。' });
+  it('only allows the site admin to delete messages', async () => {
+    const originalAdmin = process.env.ADMIN_USERNAME;
+    process.env.ADMIN_USERNAME = 'site-admin';
 
-    const deleted = await request(app)
-      .delete(`/api/messages/${created.body.item.id}`)
+    try {
+      const userToken = await createUserAndToken(app, 'regular-user');
+      const adminToken = await createUserAndToken(app, 'site-admin');
+      const created = await request(app)
+        .post('/api/messages')
+        .send({ name: '访客', content: '请删除我。' });
+
+      const forbidden = await request(app)
+        .delete(`/api/messages/${created.body.item.id}`)
+        .set('Authorization', `Bearer ${userToken}`);
+      expect(forbidden.status).toBe(403);
+
+      const deleted = await request(app)
+        .delete(`/api/messages/${created.body.item.id}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(deleted.status).toBe(204);
+
+      const messages = await request(app).get('/api/messages');
+      expect(messages.body.items).toHaveLength(0);
+    } finally {
+      if (originalAdmin === undefined) delete process.env.ADMIN_USERNAME;
+      else process.env.ADMIN_USERNAME = originalAdmin;
+    }
+  });
+
+  it('accepts long post content with embedded image data', async () => {
+    const token = await createUserAndToken(app, 'photo-user');
+    const content = `你好\n\n![photo](data:image/jpeg;base64,${'A'.repeat(600_000)})`;
+
+    const created = await request(app)
+      .post('/api/posts')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: '带图测试', content });
+
+    expect(created.status).toBe(201);
+    expect(created.body.content.length).toBeGreaterThan(600_000);
+  });
+
+  it('rejects overlong AI prompts', async () => {
+    const token = await createUserAndToken(app, 'prompt-user');
+    const res = await request(app)
+      .post('/api/ai/chat')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ prompt: 'x'.repeat(5001) });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('does not expose AI baseUrl in config', async () => {
+    const token = await createUserAndToken(app, 'cfg-user');
+    process.env.AI_API_KEY = 'test-key';
+    const res = await request(app)
+      .get('/api/ai/config')
       .set('Authorization', `Bearer ${token}`);
 
-    expect(deleted.status).toBe(204);
-
-    const messages = await request(app).get('/api/messages');
-    expect(messages.body.items).toHaveLength(0);
+    expect(res.status).toBe(200);
+    expect(res.body.enabled).toBe(true);
+    expect(res.body.baseUrl).toBeUndefined();
   });
 });

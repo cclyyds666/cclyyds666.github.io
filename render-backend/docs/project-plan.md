@@ -1,57 +1,59 @@
-# 个人网页工程说明与开发计划
+# 个人网页工程说明
 
-## 当前功能
+更新时间：2026-07-15
 
-- 静态个人主页：展示首页 Hero、入口卡片、背景音乐、图片资源和页脚。
-- 用户注册与登录：前端已调用 `/api/register` 和 `/api/login`，后端使用密码哈希保存账号。
-- 个人博客/留言能力：登录后可调用 `/api/posts` 发布文章，所有访客可读取文章列表。
-- PostgreSQL 数据库：Render 通过 `DATABASE_URL` 连接数据库，前端通过 Render API 获取动态内容。
-- 自动化测试：使用 Vitest + Supertest 覆盖首页静态访问、注册、登录、发帖、未登录拦截。
+## 当前项目状态
 
-## 目录结构
+- 技术栈：Node.js 24、ESM、Express 5、PostgreSQL（`pg` / Neon）、Vitest + Supertest。
+- **唯一后端**：`render-backend/`。根目录 `src/` 已废弃，仅作兼容提示。
+- 前端静态资源：`render-backend/public/*.html`（Pages 与 Render 同源目录）。
+- 已有功能：注册/登录、资料、帖子（Markdown + 压缩 base64 图）、留言、访问统计、Agnes AI 助手、今日签。
 
-```text
-public/              前端静态页面、样式、图片资源；Render 与 GitHub Pages 共用这一套
-src/                 Node.js 后端源码
-src/db/              数据库连接与建表逻辑
-src/middleware/      Express 中间件
-tests/               API 与前端入口测试
-docs/                项目文档与开发计划
-data/                本地 SQLite 数据目录，数据库文件不提交
-render.yaml          Render 部署配置
-```
+## 部署
 
-## 本地开发
+- Render：`render.yaml` → `cd render-backend && npm ci` / `npm start`，health：`/api/health`。
+- GitHub Pages：`.github/workflows/pages.yml` 上传 `render-backend/public`。
+- CORS：`ALLOWED_ORIGINS=https://cclyyds666.github.io`。
 
-```bash
-npm install
-npm run dev
-```
+## AI（Agnes）
 
-默认服务地址为 `http://localhost:3000`。
+- 后端固定代理：`AI_API_KEY` + `AI_API_BASE_URL` + `AI_MODEL`（默认 `agnes-1.5-flash`）。
+- 前端只提交 `{ prompt }`，不收集用户 Key。
+- `/api/ai/chat` 需登录；有 prompt 长度上限与简易按用户限流。
+- `/api/ai/config` 仅返回 `enabled` / `model`，不暴露 baseUrl。
+- `/api/ai/daily-quote` 公开，按自然日内存缓存。
 
-## 测试
+## 发帖带图（2026-07-15 修复）
 
-```bash
-npm test
-```
+根因：手机原图转 base64 后远超旧限制（content 50 万字 + `express.json` 1mb），后端返回「标题或内容过长」。
 
-## Render 部署说明
+已调整：
 
-- 构建命令：`npm install`
-- 启动命令：`npm start`
-- Node 版本：`24`
-- 建议配置环境变量：
-  - `JWT_SECRET`：生产环境 Token 签名密钥。
-  - `DATABASE_PATH`：SQLite 文件路径，默认 `data/site.sqlite`。
+1. `express.json` → **6mb**
+2. POST/PATCH 帖子 content 上限统一 → **2_000_000**
+3. 前端 canvas 压缩：最长边 1280，JPEG 质量约 0.72，单张过大再降质
+4. 更明确的过长错误文案
 
-注意：Render 免费 Web Service 的文件系统可能不会长期持久化。后续如果留言/博客数据必须稳定保存，建议升级为 Render Disk 或迁移到 Render PostgreSQL。
+## 安全维护（2026-07-15）
 
-## 下一步开发计划
+- `.gitignore` 忽略 `env/`、`*.env`
+- 帖子 Markdown 经 DOMPurify 再 `innerHTML`
+- 删除留言仅 `ADMIN_USERNAME` 对应用户
+- AI 上游错误不直出内部信息
 
-1. 修复并统一页面中文编码，补齐导航中引用但仓库里尚不存在的页面。
-2. 给博客增加删除、编辑、分页和 Markdown/富文本能力。
-3. 给留言或文章增加前端提示状态，减少 `alert`，提升移动端表单体验。
-4. 增加管理员角色，用于审核留言、管理公开内容。
-5. 为数据库增加迁移脚本，并考虑从 SQLite 平滑迁移到 PostgreSQL。
-6. 增加端到端测试，覆盖浏览器里的注册、登录和发布流程。
+## 建议环境变量
+
+| Key | 说明 |
+|---|---|
+| `DATABASE_URL` | Neon 连接串 |
+| `JWT_SECRET` | 必填生产环境 |
+| `ALLOWED_ORIGINS` | 逗号分隔前端源 |
+| `AI_API_KEY` / `AI_API_BASE_URL` / `AI_MODEL` | Agnes |
+| `AI_PROMPT_MAX_CHARS` | 默认 4000 |
+| `ADMIN_USERNAME` | 站长用户名（删留言） |
+
+## 维护注意
+
+1. 只改 `render-backend/`，不要在根 `src/` 加功能。
+2. 大图仍走 base64 入库，库体积会涨；长期可改对象存储。
+3. Render free 会冷启动，前端需容忍首请求慢。

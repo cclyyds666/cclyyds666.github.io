@@ -9,7 +9,14 @@ import { authRequired } from './middleware/authRequired.js';
 const DEFAULT_AI_API_BASE_URL = 'https://apihub.agnes-ai.com/v1';
 const DEFAULT_AI_MODEL = 'agnes-1.5-flash';
 const FALLBACK_DAILY_QUOTE = '愿你今天也能把普通日子，过成一首温柔的小诗。';
+const MAX_POST_TITLE_LENGTH = 80;
+// base64 图片会显著膨胀：5 张压缩图约 1–1.5MB 文本，留足余量
+const MAX_POST_CONTENT_LENGTH = 2_000_000;
+const MAX_AI_PROMPT_LENGTH = Number.parseInt(process.env.AI_PROMPT_MAX_CHARS || '4000', 10) || 4000;
+const AI_RATE_WINDOW_MS = 60_000;
+const AI_RATE_MAX_REQUESTS = 20;
 let dailyQuoteCache = { date: '', quote: '' };
+const aiRateBuckets = new Map();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const publicDir = join(__dirname, '..', 'public');
@@ -85,6 +92,45 @@ function currentChinaTimeContext() {
   return `当前中国标准时间（UTC+8，Asia/Shanghai）是：${formatter.format(now)}。如果用户询问当前时间、日期或星期，请以这个时间为准。你不能实时联网查询天气；如果用户询问天气，请说明需要接入天气接口才能获取实时天气。`;
 }
 
+function enforceAiRateLimit(userId) {
+  const key = String(userId || 'anonymous');
+  const now = Date.now();
+  const bucket = aiRateBuckets.get(key) || { count: 0, resetAt: now + AI_RATE_WINDOW_MS };
+
+  if (now >= bucket.resetAt) {
+    bucket.count = 0;
+    bucket.resetAt = now + AI_RATE_WINDOW_MS;
+  }
+
+  bucket.count += 1;
+  aiRateBuckets.set(key, bucket);
+
+  if (bucket.count > AI_RATE_MAX_REQUESTS) {
+    const error = new Error('请求过于频繁，请稍后再试。');
+    error.status = 429;
+    throw error;
+  }
+}
+
+function mapAiError(error) {
+  const status = Number(error?.status) || 502;
+  if (status === 401 || status === 403) {
+    return { status: 502, message: 'AI 服务鉴权失败，请稍后再试。' };
+  }
+  if (status === 429) {
+    return { status: 429, message: '请求过于频繁，请稍后再试。' };
+  }
+  if (status === 500 && /尚未配置/.test(String(error?.message || ''))) {
+    return { status: 503, message: 'AI 服务尚未配置，请联系站长。' };
+  }
+  return { status: status >= 400 && status < 600 ? status : 502, message: 'AI 服务暂时不可用，请稍后再试。' };
+}
+
+function isSiteAdmin(user) {
+  const admin = cleanText(process.env.ADMIN_USERNAME);
+  return Boolean(admin && user?.username === admin);
+}
+
 async function requestAiCompletion(messages) {
   const baseUrl = cleanBaseUrl(process.env.AI_API_BASE_URL || DEFAULT_AI_API_BASE_URL);
   const apiKey = cleanText(process.env.AI_API_KEY);
@@ -98,16 +144,29 @@ async function requestAiCompletion(messages) {
 
   const contextMessages = [{ role: 'system', content: currentChinaTimeContext() }, ...messages];
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({ model, messages: contextMessages })
-  });
+  let response;
+  try {
+    response = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({ model, messages: contextMessages })
+    });
+  } catch {
+    const error = new Error('AI 上游网络错误。');
+    error.status = 502;
+    throw error;
+  }
+
   const text = await response.text();
-  const data = text ? JSON.parse(text) : {};
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = {};
+  }
 
   if (!response.ok) {
     const error = new Error(data?.error?.message || data?.message || 'AI 请求失败。');
@@ -154,7 +213,7 @@ export function createApp(options = {}) {
     return next();
   });
 
-  app.use(express.json({ limit: '1mb' }));
+  app.use(express.json({ limit: '6mb' }));
   app.use(express.static(publicDir));
 
   app.get('/', (req, res) => {
@@ -165,15 +224,14 @@ export function createApp(options = {}) {
     try {
       await pool.query('SELECT 1');
       res.json({ ok: true, service: 'personal-site-api', db: 'connected' });
-    } catch (error) {
-      res.status(503).json({ ok: false, service: 'personal-site-api', db: 'disconnected', error: error.message });
+    } catch {
+      res.status(503).json({ ok: false, service: 'personal-site-api', db: 'disconnected' });
     }
   });
 
   app.get('/api/ai/config', authRequired, (_req, res) => {
     res.json({
       enabled: Boolean(process.env.AI_API_KEY),
-      baseUrl: cleanBaseUrl(process.env.AI_API_BASE_URL || DEFAULT_AI_API_BASE_URL),
       model: cleanText(process.env.AI_MODEL) || DEFAULT_AI_MODEL
     });
   });
@@ -184,12 +242,17 @@ export function createApp(options = {}) {
     if (!prompt) {
       return res.status(400).json({ message: '请输入要提问的内容。' });
     }
+    if (prompt.length > MAX_AI_PROMPT_LENGTH) {
+      return res.status(400).json({ message: `提问内容过长，请控制在 ${MAX_AI_PROMPT_LENGTH} 字以内。` });
+    }
 
     try {
+      enforceAiRateLimit(req.user.id);
       const answer = await requestAiCompletion([{ role: 'user', content: prompt }]);
       return res.json({ answer });
     } catch (error) {
-      return res.status(error.status || 502).json({ message: error.message || 'AI 服务暂时不可用。' });
+      const mapped = mapAiError(error);
+      return res.status(mapped.status).json({ message: mapped.message });
     }
   });
 
@@ -397,8 +460,13 @@ export function createApp(options = {}) {
       return res.status(400).json({ message: '标题和内容都不能为空。' });
     }
 
-    if (title.length > 80 || content.length > 500000) {
-      return res.status(400).json({ message: '标题或内容过长。' });
+    if (title.length > MAX_POST_TITLE_LENGTH) {
+      return res.status(400).json({ message: `标题过长，最多 ${MAX_POST_TITLE_LENGTH} 个字符。` });
+    }
+    if (content.length > MAX_POST_CONTENT_LENGTH) {
+      return res.status(400).json({
+        message: '内容过长。请减少图片数量或使用更小的图片后再试。'
+      });
     }
 
     const { rows } = await pool.query(`
@@ -424,7 +492,12 @@ export function createApp(options = {}) {
     const content = cleanText(req.body?.content);
 
     if (!title || !content) return res.status(400).json({ message: '标题和内容都不能为空。' });
-    if (title.length > 80 || content.length > 4000) return res.status(400).json({ message: '标题或内容过长。' });
+    if (title.length > MAX_POST_TITLE_LENGTH) {
+      return res.status(400).json({ message: `标题过长，最多 ${MAX_POST_TITLE_LENGTH} 个字符。` });
+    }
+    if (content.length > MAX_POST_CONTENT_LENGTH) {
+      return res.status(400).json({ message: '内容过长。请减少图片数量或使用更小的图片后再试。' });
+    }
 
     const { rows } = await pool.query(`
       UPDATE posts
@@ -492,8 +565,11 @@ export function createApp(options = {}) {
     return res.status(201).json({ message: '留言成功。', item: messageResponse(rows[0]) });
   });
 
-  // ----- 删除留言（需登录） -----
+  // ----- 删除留言（仅站长） -----
   app.delete('/api/messages/:id', authRequired, async (req, res) => {
+    if (!isSiteAdmin(req.user)) {
+      return res.status(403).json({ message: '只有站长可以删除留言。' });
+    }
     const { rowCount } = await pool.query('DELETE FROM messages WHERE id = $1', [req.params.id]);
     if (rowCount === 0) return res.status(404).json({ message: '没有找到这条留言。' });
     return res.status(204).end();
